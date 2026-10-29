@@ -20,6 +20,22 @@ One screen, laid out like the [virtual thermal printer](https://github.com/chris
 The list comes from `GET /user-interaction/messages` (the latest 100; with `?version=<n>` an unchanged list returns only `{ version }`), and the screen from `GET /user-interaction/get-state`, which also returns the payment in progress and how the last one ended.
 
 
+## Desktop app
+The mock terminal also runs as a desktop app for macOS, Windows and Linux, like the [virtual thermal printer's](https://github.com/christiandt/virtual-thermal-printer). The window shows the page; the mock listens on port 3000, or the next free port if that is taken (another mock, a Docker container). The window title shows the address to point a POS at, as does "Connect your POS" in the device panel.
+
+Download it from the [releases](https://github.com/christiandt/adyen-mock-terminal-api/releases): a `.dmg`/`.zip` for macOS (Apple silicon `arm64`, Intel `x64`), an installer or a portable `.exe` for Windows, and an `.AppImage` for Linux. The app is not signed with a developer certificate, so on first launch macOS asks to allow it under System Settings → Privacy & Security, and Windows SmartScreen asks to run it anyway.
+
+To build it yourself:
+```
+npm ci
+cd desktop
+npm ci
+npm start      # run it from the sources
+npm run pack   # an unpacked app for this machine, in desktop/release
+npm run dist   # the installers, in desktop/release
+```
+A release is built by pushing a `v*` tag (the version is the one in `package.json`), or from the Actions tab with an existing tag.
+
 ## Supported Requests/Responses
 
 ### Basics
