@@ -26,6 +26,14 @@ We currently support the following [Terminal API requests/responses](https://doc
 |                                                                                                                                                                    | [PaymentBusyResponse](https://docs.adyen.com/point-of-sale/design-your-integration/terminal-api/terminal-api-reference/#comadyennexopaymentresponse)                 | Returned when the payment terminal is waiting for pin.                                                                               |
 |                         [AbortRequest](https://docs.adyen.com/point-of-sale/design-your-integration/terminal-api/terminal-api-reference/#comadyennexoabortrequest) |                                                                                                                                                                      | Cancel an in-progress payment. **Note:** Only cancels the payment request. Parameters may slightly differ depending on the terminal. | 
 
+### Responses answer the request
+The payloads are recorded responses, but each response is built for the request it answers, as a terminal would:
+- The `MessageHeader` carries the request's `ServiceID`, `SaleID` and `POIID`.
+- A `PaymentResponse` returns the request's `SaleTransactionID` unchanged, and a new `POITransactionID` (`<tender reference>.<PSP reference>`) with a new 16-character PSP reference, also in `AcquirerTransactionID` and `AdditionalResponse`.
+- An approved payment is authorised for exactly the `RequestedAmount` and `Currency`, on Adyen's Visa test card (`411111 **** 1111`): `CardData` and the URL-encoded `AdditionalResponse` carry `paymentMethod`, `cardSummary`, `cardBin`, `posAuthAmountValue` (in minor units), `merchantReference` and so on.
+- A refused payment keeps its recorded refusal reason and gets its own PSP reference.
+- A `ReversalResponse` gets a new PSP reference and names the reversed payment's as `originalPspReference`.
+
 ### Declined payments
 In general, test payments generate the result Approved. To simulate declined payments, you can change the last three digits of the `RequestedAmount` that you specify in the payment request.
 - We constructed the mock payloads using a `V400M-` terminal device.
