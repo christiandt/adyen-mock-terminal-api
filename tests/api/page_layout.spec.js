@@ -102,3 +102,39 @@ test('Page - the messages pane and the device panel can be hidden', async ({ pag
   await page.locator('#device-panel-toggle').click();
   await expect(page.locator('#device-panel-body')).toBeVisible();
 });
+
+for (const [width, height] of [[1024, 800], [900, 700], [1440, 900]]) {
+  test(`Page - at ${width}x${height} the whole keypad is on screen and usable`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await page.goto('/');
+    for (const id of ['1-button', '3-button', 'cancel-button', 'star-button', 'hashtag-button', 'confirm-button']) {
+      const box = await page.locator(`[id="${id}"]`).boundingBox();
+      expect(box, id).not.toBeNull();
+      expect(box.x, id).toBeGreaterThanOrEqual(0);
+      expect(box.y, id).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width, id).toBeLessThanOrEqual(width);
+      expect(box.y + box.height, id).toBeLessThanOrEqual(height);
+      await page.locator(`[id="${id}"]`).click({ trial: true });
+    }
+  });
+}
+
+test('Messages - only the newest exchange opens by itself; one the user opens stays open', async ({ page, request }) => {
+  await request.post('/user-interaction/clear-codeblocks-button');
+  await settings(request, { autoConfirm: true, autoConfirmDelayMs: 0 });
+  await page.goto('/');
+  for (const id of ['open000001', 'open000002', 'open000003']) {
+    await request.post('/sync', { data: paymentRequest(100, id) });
+    await expect(page.locator('.message')).toHaveCount(Number(id.slice(-1)));
+  }
+  await expect(page.locator('.message[open]')).toHaveCount(1);
+  await expect(page.locator('.message[open]')).toContainText('open000003');
+
+  // Opened by the user: stays open when the next exchange arrives.
+  await page.locator('.message', { hasText: 'open000001' }).locator('summary').click();
+  await request.post('/sync', { data: paymentRequest(100, 'open000004') });
+  await expect(page.locator('.message')).toHaveCount(4);
+  await expect(page.locator('.message[open]')).toHaveCount(2);
+  await expect(page.locator('.message', { hasText: 'open000001' })).toHaveAttribute('open', '');
+  await expect(page.locator('.message', { hasText: 'open000004' })).toHaveAttribute('open', '');
+});

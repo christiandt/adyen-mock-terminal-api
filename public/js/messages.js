@@ -105,7 +105,11 @@ function renderEntry(entry) {
     const details = document.createElement("details");
     details.className = "message";
     details.dataset.id = entry.id;
-    details.open = openIds.has(entry.id);
+    if (openIds.has(entry.id)) {
+        // Setting `open` fires a `toggle` event too; mark it so it is not taken for a click.
+        details.dataset.programmatic = "true";
+        details.open = true;
+    }
 
     const summary = document.createElement("summary");
     const time = document.createElement("span");
@@ -131,6 +135,12 @@ function renderEntry(entry) {
         }
     };
     details.addEventListener("toggle", () => {
+        if (details.dataset.programmatic) {
+            delete details.dataset.programmatic;
+            fill();
+            return;
+        }
+        // The user opened or closed it: it is no longer the automatically opened one.
         if (details.open) {
             openIds.add(entry.id);
         } else {
