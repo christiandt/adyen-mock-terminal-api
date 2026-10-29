@@ -7,7 +7,11 @@
  * - autoConfirmDelayMs: how long the terminal "waits for the shopper" first, 0-60000 ms
  *   (AUTO_CONFIRM_DELAY_MS, default 1000). An AbortRequest or TransactionStatusRequest can be
  *   sent meanwhile.
+ * - card: the card an approved payment is made with, one of src/services/cards.js
+ *   (CARD, default "visa").
+ * - cardLast4: four digits to use instead of the card's own, or null (CARD_LAST4).
  */
+const { CARDS, DEFAULT_CARD_ID, resolveCard } = require("./cards");
 
 const MAX_DELAY_MS = 60000;
 
@@ -25,6 +29,8 @@ class TerminalSettings {
         this.settings = {
             autoConfirm: envFlag(process.env.AUTO_CONFIRM),
             autoConfirmDelayMs: envDelay(process.env.AUTO_CONFIRM_DELAY_MS, 1000),
+            card: CARDS[process.env.CARD] ? process.env.CARD : DEFAULT_CARD_ID,
+            cardLast4: /^\d{4}$/.test(process.env.CARD_LAST4 || "") ? process.env.CARD_LAST4 : null,
         };
     }
 
@@ -33,8 +39,15 @@ class TerminalSettings {
     }
 
     /**
+     * The card an approved payment is made with.
+     */
+    card() {
+        return resolveCard(this.settings.card, this.settings.cardLast4);
+    }
+
+    /**
      * Changes the given settings.
-     * @param {Object} changes - Any of { autoConfirm: Boolean, autoConfirmDelayMs: Number }.
+     * @param {Object} changes - Any of { autoConfirm: Boolean, autoConfirmDelayMs: Number, card: String, cardLast4: String|null }.
      * @returns {{settings?: Object, error?: String}}
      */
     update(changes) {
@@ -54,6 +67,16 @@ class TerminalSettings {
                     return { error: `autoConfirmDelayMs must be a whole number from 0 to ${MAX_DELAY_MS}.` };
                 }
                 next.autoConfirmDelayMs = value;
+            } else if (key === "card") {
+                if (!CARDS[value]) {
+                    return { error: `card must be one of: ${Object.keys(CARDS).join(", ")}.` };
+                }
+                next.card = value;
+            } else if (key === "cardLast4") {
+                if (value !== null && !(typeof value === "string" && /^\d{4}$/.test(value))) {
+                    return { error: "cardLast4 must be four digits, as a string, or null." };
+                }
+                next.cardLast4 = value;
             } else {
                 return { error: `Unknown setting: ${key}.` };
             }

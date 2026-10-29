@@ -317,3 +317,10 @@ code {
     vertical-align: middle;
     cursor: pointer;
 }
+
+.card-select {
+    margin-left: 6px;
+    padding: 4px;
+    border-radius: 6px;
+    font-weight: 400;
+}

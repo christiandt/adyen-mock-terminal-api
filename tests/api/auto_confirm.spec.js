@@ -22,26 +22,26 @@ const settings = (request, data) => request.post('/user-interaction/settings', {
 test.describe.configure({ mode: 'serial' });
 
 test.afterEach(async ({ request }) => {
-  await settings(request, { autoConfirm: false, autoConfirmDelayMs: 1000 });
+  await settings(request, { autoConfirm: false, autoConfirmDelayMs: 1000, card: 'visa', cardLast4: null });
 });
 
 test('Settings - read and changed at runtime', async ({ request }) => {
   const initial = await (await request.get('/user-interaction/settings')).json();
-  expect(initial).toEqual({ autoConfirm: false, autoConfirmDelayMs: 1000 });
+  expect(initial).toEqual({ autoConfirm: false, autoConfirmDelayMs: 1000, card: 'visa', cardLast4: null });
 
   const changed = await settings(request, { autoConfirm: true, autoConfirmDelayMs: 250 });
   expect(changed.status()).toBe(200);
-  expect(await changed.json()).toEqual({ autoConfirm: true, autoConfirmDelayMs: 250 });
-  expect(await (await request.get('/user-interaction/settings')).json()).toEqual({ autoConfirm: true, autoConfirmDelayMs: 250 });
+  expect(await changed.json()).toMatchObject({ autoConfirm: true, autoConfirmDelayMs: 250 });
+  expect(await (await request.get('/user-interaction/settings')).json()).toMatchObject({ autoConfirm: true, autoConfirmDelayMs: 250 });
 });
 
 test('Settings - invalid values are refused and change nothing', async ({ request }) => {
-  for (const data of [{ autoConfirm: 'yes' }, { autoConfirmDelayMs: -1 }, { autoConfirmDelayMs: 60001 }, { autoConfirmDelayMs: 1.5 }, { pin: '1234' }]) {
+  for (const data of [{ autoConfirm: 'yes' }, { autoConfirmDelayMs: -1 }, { autoConfirmDelayMs: 60001 }, { autoConfirmDelayMs: 1.5 }, { pin: '1234' }, { card: 'diners' }, { cardLast4: '12a4' }, { cardLast4: 1234 }]) {
     const response = await settings(request, data);
     expect(response.status()).toBe(400);
     expect((await response.json()).error).toBeTruthy();
   }
-  expect(await (await request.get('/user-interaction/settings')).json()).toEqual({ autoConfirm: false, autoConfirmDelayMs: 1000 });
+  expect(await (await request.get('/user-interaction/settings')).json()).toEqual({ autoConfirm: false, autoConfirmDelayMs: 1000, card: 'visa', cardLast4: null });
 });
 
 test('Auto-confirm - a payment is approved without entering a PIN', async ({ request }) => {

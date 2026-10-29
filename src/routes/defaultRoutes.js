@@ -3,6 +3,7 @@ const { userInteractionService, STATES } = require('../services/userInteractionS
 const paymentService = require('../services/payloads/paymentService');
 const { OUTCOMES } = require('../services/payloads/paymentService');
 const transactionStore = require('../services/transactionStore');
+const terminalSettings = require('../services/terminalSettings');
 const { buildTransactionStatusResponse } = require('../services/transactionStatusService');
 const { buildResponse } = require('../services/responseBuilder');
 const express = require('express');
@@ -53,6 +54,7 @@ router.post("/sync", async (req, res) => {
         if (paymentService.containsPrefix(req)) {
             const { outcome, prefix, tenderReference } = await paymentService.getResponse(req);
             const response = buildResponse(payloadService.getResponseByPrefix(prefix), req.body, {
+                card: terminalSettings.card(),
                 tenderReference,
                 outcome: outcome === OUTCOMES.CONFIRMED ? undefined : outcome,
             });

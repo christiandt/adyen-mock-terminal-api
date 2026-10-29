@@ -8,18 +8,11 @@
  * This fills those in, so an integration can match a response to its request.
  */
 
-// The card a successful payment is made with: Adyen's Visa test card.
-const DEFAULT_CARD = {
-    brand: "visa",
-    bin: "411111",
-    last4: "1111",
-    expiryMonth: "03",
-    expiryYear: "2030",
-    countryCode: "578",
-    issuerCountry: "NO",
-    fundingSource: "CREDIT",
-    entryMode: "ICC",
-};
+const { resolveCard, DEFAULT_CARD_ID } = require("./cards");
+
+// The card a successful payment is made with unless the terminal setting says otherwise:
+// Adyen's Visa test card.
+const DEFAULT_CARD = resolveCard(DEFAULT_CARD_ID);
 
 // Currencies whose minor unit is not 2 decimals, from Adyen's currency table
 // (https://docs.adyen.com/development-resources/currency-codes). Adyen's table is what
@@ -123,7 +116,7 @@ function approvedAdditionalResponse({ pspReference, amountsReq, saleTransactionI
         pspReference: pspReference,
         merchantReference: saleTransactionId || "",
         paymentMethod: card.brand,
-        paymentMethodVariant: card.brand,
+        paymentMethodVariant: card.variant,
         cardBin: card.bin,
         cardSummary: card.last4,
         expiryDate: `${Number(card.expiryMonth)}/${card.expiryYear}`,
@@ -135,6 +128,19 @@ function approvedAdditionalResponse({ pspReference, amountsReq, saleTransactionI
         posOriginalAmountValue: value,
     };
     return new URLSearchParams(fields).toString();
+}
+
+/**
+ * The CardData of a payment made with `card`.
+ */
+function cardDataFor(card) {
+    return {
+        PaymentBrand: card.brand,
+        MaskedPan: `${card.bin} **** ${card.last4}`,
+        CardCountryCode: card.countryCode,
+        EntryMode: [card.entryMode],
+        SensitiveCardData: { ExpiryDate: card.expiryMonth + card.expiryYear.slice(2) },
+    };
 }
 
 /**
@@ -179,23 +185,19 @@ function buildPaymentResponse(response, request, card, { tenderReference, outcom
 
     if (paymentResponse.Response?.Result !== "Success") {
         // A refused payment keeps its recorded AdditionalResponse (message and refusal reason);
-        // its PSP reference is in the transaction IDs above, as in the recordings.
+        // its PSP reference is in the transaction IDs above, as in the recordings. A card that was
+        // read and refused is the terminal's card; an aborted or cancelled payment read none.
+        const cardData = result?.PaymentInstrumentData?.CardData;
+        if (cardData?.PaymentBrand) {
+            Object.assign(cardData, cardDataFor(card));
+        }
         return;
     }
 
     // An approved payment is authorised for exactly the requested amount, on the card.
     if (result && amountsReq) {
         result.AmountsResp = { AuthorizedAmount: amountsReq.RequestedAmount, Currency: amountsReq.Currency };
-        result.PaymentInstrumentData = {
-            PaymentInstrumentType: "Card",
-            CardData: {
-                PaymentBrand: card.brand,
-                MaskedPan: `${card.bin} **** ${card.last4}`,
-                CardCountryCode: card.countryCode,
-                EntryMode: [card.entryMode],
-                SensitiveCardData: { ExpiryDate: card.expiryMonth + card.expiryYear.slice(2) },
-            },
-        };
+        result.PaymentInstrumentData = { PaymentInstrumentType: "Card", CardData: cardDataFor(card) };
         paymentResponse.Response.AdditionalResponse = approvedAdditionalResponse({
             pspReference,
             amountsReq,

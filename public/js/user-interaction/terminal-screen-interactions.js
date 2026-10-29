@@ -129,3 +129,27 @@ pollEndpoint('/user-interaction/get-state', updateState);
         checkbox.checked = settings.autoConfirm === true;
     });
 })();
+
+
+// Binds the "Card" menu to the terminal's `card` setting.
+(async function bindCardSelect() {
+    const select = document.getElementById("card-select");
+    if (!select) {
+        return;
+    }
+    try {
+        const [cards, settings] = await Promise.all([
+            sendGetRequest("/user-interaction/cards"),
+            sendGetRequest("/user-interaction/settings"),
+        ]);
+        for (const card of cards) {
+            select.add(new Option(card.label, card.id, false, card.id === settings.card));
+        }
+    } catch (error) {
+        console.error(error);
+    }
+    select.addEventListener("change", async () => {
+        const settings = await sendPostRequest("/user-interaction/settings", { card: select.value });
+        select.value = settings.card;
+    });
+})();
