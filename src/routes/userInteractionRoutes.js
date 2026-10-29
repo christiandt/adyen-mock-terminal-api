@@ -1,6 +1,7 @@
 const { userInteractionService, STATES } = require('../services/userInteractionService');
 const terminalSettings = require('../services/terminalSettings');
 const { listCards } = require('../services/cards');
+const messageLog = require('../services/messageLog');
 const paymentService = require('../services/payloads/paymentService');
 const express = require('express');
 const router = express.Router();
@@ -8,8 +9,23 @@ const router = express.Router();
 
 /* Request & response code-blocks screen polling start */
 
+// The terminal's state, the payment it is processing (for its screen) and how the last one ended.
 router.get("/get-state", async (req, res) => {
-    res.status(200).send({ state: userInteractionService.getState() });
+    res.status(200).send({
+        state: userInteractionService.getState(),
+        payment: paymentService.inProgress(),
+        lastOutcome: userInteractionService.getLastOutcome(),
+    });
+});
+
+// The recent /sync exchanges, newest first. With ?version=<n> and nothing changed since,
+// only { version } is returned.
+router.get("/messages", async (req, res) => {
+    if (req.query.version !== undefined && Number(req.query.version) === messageLog.version) {
+        res.status(200).json({ version: messageLog.version });
+        return;
+    }
+    res.status(200).json({ version: messageLog.version, messages: messageLog.list() });
 });
 
 router.get("/get-last-request", async (_req, res) => {
@@ -22,6 +38,7 @@ router.get("/get-last-response", async (req, res) => {
 
 router.post("/clear-codeblocks-button", async (req, res) => {
     userInteractionService.clearLastRequestAndResponse();
+    messageLog.clear();
     console.info("Cleared the request and response codeblocks.");
     res.status(200).send({});
 });

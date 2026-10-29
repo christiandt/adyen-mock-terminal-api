@@ -10,6 +10,7 @@ class UserInteractionService {
             };
             this.lastRequest = {};
             this.lastResponse = {};
+            this.lastOutcome = null;
             this.state = this.STATES.READY;
 
             this.pin = "";
@@ -75,6 +76,36 @@ class UserInteractionService {
     setLastRequest(lastRequest) {
         this.lastRequest = lastRequest;
         console.info("Last request is set to: " + JSON.stringify(this.lastRequest, null, 2));
+    }
+
+    /**
+     * How the last payment ended, for the terminal screen:
+     * { result, errorCondition, amount, currency, brand, last4, at }.
+     */
+    getLastOutcome() {
+        return this.lastOutcome;
+    }
+
+    /**
+     * Records how a payment ended, from its PaymentResponse.
+     * @param {JsonObject} response - The SaleToPOIResponse body.
+     */
+    setLastOutcome(response) {
+        const payment = response?.SaleToPOIResponse?.PaymentResponse;
+        if (!payment) {
+            return;
+        }
+        const amounts = payment.PaymentResult?.AmountsResp;
+        const card = payment.PaymentResult?.PaymentInstrumentData?.CardData;
+        this.lastOutcome = {
+            result: payment.Response?.Result,
+            errorCondition: payment.Response?.ErrorCondition,
+            amount: amounts?.AuthorizedAmount,
+            currency: amounts?.Currency,
+            brand: card?.PaymentBrand,
+            last4: card?.MaskedPan ? card.MaskedPan.slice(-4) : undefined,
+            at: new Date().toISOString(),
+        };
     }
 
     /**

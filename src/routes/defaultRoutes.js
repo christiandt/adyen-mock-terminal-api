@@ -4,6 +4,7 @@ const paymentService = require('../services/payloads/paymentService');
 const { OUTCOMES } = require('../services/payloads/paymentService');
 const transactionStore = require('../services/transactionStore');
 const terminalSettings = require('../services/terminalSettings');
+const messageLog = require('../services/messageLog');
 const { buildTransactionStatusResponse } = require('../services/transactionStatusService');
 const { buildResponse } = require('../services/responseBuilder');
 const express = require('express');
@@ -28,25 +29,27 @@ router.post("/sync", async (req, res) => {
     console.info("Incoming /sync request ...");
     userInteractionService.setLastRequest(req.body);
     userInteractionService.setLastResponse({});
+    const entry = messageLog.add(req.body);
     
     try {
         // Handle abort request: Adyen answers it with 200 OK and no body, and ends the payment it
         // names with ErrorCondition "Aborted".
         if (req.body.SaleToPOIRequest.AbortRequest) {
             paymentService.abort(req.body.SaleToPOIRequest.AbortRequest.MessageReference);
+            messageLog.complete(entry, null);
             res.status(200).end();
             return;
         }
 
         // Handle transactionStatus request; answered while a payment is in progress too.
         if (req.body.SaleToPOIRequest.TransactionStatusRequest) {
-            send(res, buildTransactionStatusResponse(req.body));
+            send(res, entry, buildTransactionStatusResponse(req.body));
             return;
         }
 
         // Handle paymentBusy response.
         if (userInteractionService.getState() === STATES.BUSY) {
-            send(res, buildResponse(payloadService.getResponseByPrefix("paymentBusy"), req.body));
+            send(res, entry, buildResponse(payloadService.getResponseByPrefix("paymentBusy"), req.body));
             return;
         }
 
@@ -59,7 +62,8 @@ router.post("/sync", async (req, res) => {
                 outcome: outcome === OUTCOMES.CONFIRMED ? undefined : outcome,
             });
             transactionStore.save("Payment", req.body, response);
-            send(res, response);
+            userInteractionService.setLastOutcome(response);
+            send(res, entry, response);
             return;
         }
 
@@ -69,17 +73,19 @@ router.post("/sync", async (req, res) => {
                 findPayment: (id) => transactionStore.findPayment(id),
             });
             transactionStore.save("Reversal", req.body, response);
-            send(res, response);
+            send(res, entry, response);
             return;
         }
 
         // Handle requests not found.
         userInteractionService.setState(STATES.READY);
         console.error("Request not found: " + req.body);
+        messageLog.complete(entry, {});
         res.status(404).send({});
     } catch (e) {
         userInteractionService.setState(STATES.READY);
         console.error(e);
+        messageLog.complete(entry, {});
         if (!res.headersSent) {
             res.status(500).send({});
         }
@@ -87,10 +93,11 @@ router.post("/sync", async (req, res) => {
 });
 
 /**
- * Sends `response` with 200 OK and shows it as the last response.
+ * Sends `response` with 200 OK and shows it as the last response and in the message log.
  */
-function send(res, response) {
+function send(res, entry, response) {
     userInteractionService.setLastResponse(response);
+    messageLog.complete(entry, response);
     res.status(200).send(response);
 }
 

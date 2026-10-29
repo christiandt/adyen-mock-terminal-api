@@ -1,326 +1,596 @@
+/*
+ One screen, as the virtual thermal printer: the terminal centred, the message list in a pane
+ that can be hidden, and the device panel in the bottom-right corner. Light or dark with the system.
+*/
+
 :root {
-    --adyen-dark-color: #00112c;
-    --adyen-green-color: #0abf53;
-    --yellow-color: #f1c40f;
-    --red-color: #e74c3c;
-    --semi-white-color: #f0f0f0;
-    --gray-color: #7e8a8f;
-    --gray-dark-color: #525257;
-    --gray-accent-color: #48525a;
-    --gray-highlight-color: #cccccc;
-    --terminal-top-device-color: #dedede;
-    --terminal-bottom-device-color: #ededed;
-    --terminal-border-radius: 12px;
+    color-scheme: light dark;
+    --bg: light-dark(#f0f0f0, #121212);
+    --surface: light-dark(#ffffff, #1d1d1d);
+    --surface-muted: light-dark(#e8e8e8, #262626);
+    --text: light-dark(#1a1a1a, #e6e6e6);
+    --text-muted: light-dark(#5c5c5c, #a3a3a3);
+    --border: light-dark(#d4d4d4, #343434);
+    --approved: light-dark(#1a7f37, #3fb950);
+    --declined: light-dark(#c62828, #f2645a);
+    --busy: light-dark(#b26a00, #e3a33b);
+    --accent: light-dark(#0b5cad, #6cb6ff);
+    --pane-width: 460px;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
-body {
-    font-family: "Fakt", sans-serif;
+* {
+    box-sizing: border-box;
 }
 
-.main {
-    color: var(--semi-white-color);
-    background: var(--adyen-dark-color);
-    min-height: 100vh;
+html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
 }
 
-/* Sections start */
-.trigger-request-section {
-    display: flex;
-    width: 1200px;
-    padding: 0 32px;
+code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.92em;
 }
 
-.codeblock-section {
-    display: inline-grid;
-    width: 860px;
-    padding: 0 32px;
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
 }
 
-.terminal-section {
-    display: inline-grid;
-    margin: 0 128px;
-    width: 360px;
-    padding-bottom: 16px;
+/* ---------- Layout ---------- */
+
+.app {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) var(--pane-width);
+    height: 100svh;
+    overflow: hidden;
 }
 
-/* Sections end */
-
-
-/* Trigger request start */
-.trigger-request-section-title {
-    font-size: larger;
-    font-weight: bold;
-    padding: 12px;
+.app.messages-collapsed {
+    grid-template-columns: minmax(0, 1fr) auto;
 }
 
-.trigger-request-dropdown {
-    border-radius: 16px;
-    padding: 8px 0;
+/* The terminal in the middle, the device panel beside it at the bottom: they never overlap. */
+.stage {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    justify-items: center;
+    gap: 16px;
+    padding: 24px;
+    min-width: 0;
+    overflow: hidden;
 }
 
-.request-dropdown {
-    padding: 8px;
-    border: 1px solid var(--semi-white-color);
-    border-radius: 8px;
+/* Medium screens: a narrower message pane and device panel leave the terminal more room. */
+@media (max-width: 1200px) {
+    :root {
+        --pane-width: 380px;
+    }
+
+    .device-panel {
+        width: 260px;
+    }
 }
 
-.request-dropdown:focus {
-    outline: none;
+@media (max-width: 860px) {
+    .app {
+        grid-template-columns: 1fr;
+        grid-template-rows: minmax(0, 1fr) auto;
+        height: auto;
+        min-height: 100svh;
+        overflow: visible;
+    }
+
+    .stage {
+        grid-template-columns: 1fr;
+        grid-template-rows: minmax(420px, 1fr) auto;
+        min-height: 100svh;
+    }
+
+    .device-panel {
+        justify-self: stretch;
+        width: auto;
+    }
+
+    .app .messages-pane {
+        max-height: 60svh;
+        border-left: 0;
+        border-top: 1px solid var(--border);
+    }
 }
 
-label {
-    margin-right: 8px;
-    font-weight: bold;
+/* ---------- Terminal ---------- */
+
+/* The terminal is sized to the space it has, in both directions, so it shrinks rather than
+   being clipped when the window is narrow. */
+.terminal-area {
+    container-type: size;
+    align-self: stretch;
+    justify-self: stretch;
+    display: grid;
+    place-items: center;
+    min-width: 0;
+    min-height: 0;
 }
 
-/* Trigger request end */
-
-
-/* Terminal start */
 .terminal {
-    display: inline-grid;
+    --terminal-height: min(640px, 100cqh, calc(100cqw * 16 / 9));
+    height: var(--terminal-height);
+    aspect-ratio: 9 / 16;
+    display: flex;
     flex-direction: column;
-    border-radius: var(--terminal-border-radius);
+    background: #2a2d31;
+    border-radius: calc(var(--terminal-height) * 0.05);
+    padding: calc(var(--terminal-height) * 0.03);
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    font-size: calc(var(--terminal-height) / 32);
 }
 
 .terminal-top {
-    border-radius: var(--terminal-border-radius) var(--terminal-border-radius) 0 0;
-    background: var(--terminal-top-device-color);
-    padding: 24px 16px;
-}
-
-.terminal-bottom {
-    border-radius: 0 0 var(--terminal-border-radius) var(--terminal-border-radius);
-    background: var(--terminal-bottom-device-color);
-    padding: 24px;
+    flex: 1 1 auto;
+    display: flex;
+    min-height: 0;
+    margin-bottom: 0.9em;
 }
 
 .screen {
-    display: grid;
-    font-weight: bold;
-    background-color: var(--semi-white-color);
-    color: var(--adyen-dark-color);
-    border-radius: 8px;
-    padding: 8px;
-    height: 280px;
-    box-shadow: 0 0 8px rgba(0, 0, 0, 0.1);
-    user-select: none;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45em;
+    padding: 1em;
+    text-align: center;
+    border-radius: 0.5em;
+    background: #f4f6f4;
+    color: #111;
+    box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.25);
+    overflow: hidden;
 }
 
-.screen span {
-    text-align: center;
+.screen-amount {
+    font-size: 1.7em;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.screen-amount:empty {
+    display: none;
+}
+
+#screen {
+    font-size: 1.15em;
+    font-weight: 600;
+}
+
+.screen-hint {
+    font-size: 0.75em;
+    color: #555;
+}
+
+.screen-hint:empty {
+    display: none;
+}
+
+.screen-pin {
+    min-height: 1.4em;
+    font-size: 1.6em;
+    letter-spacing: 0.3em;
+    font-family: ui-monospace, Menlo, monospace;
+}
+
+.screen-pin.hidden {
+    display: none;
+}
+
+.terminal[data-tone="busy"] .screen {
+    box-shadow: inset 0 0 0 3px #e3a33b;
+}
+
+.terminal[data-tone="approved"] .screen {
+    background: #e7f6ea;
+    box-shadow: inset 0 0 0 3px #2e9d4a;
+}
+
+.terminal[data-tone="approved"] #screen {
+    color: #1a7f37;
+}
+
+.terminal[data-tone="declined"] .screen {
+    background: #fbeaea;
+    box-shadow: inset 0 0 0 3px #d64541;
+}
+
+.terminal[data-tone="declined"] #screen {
+    color: #b3261e;
+}
+
+.terminal-bottom {
+    flex: 0 0 auto;
 }
 
 .digits {
-    font-size: 16px;
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 8px;
-    user-select: none;
+    gap: 0.45em;
 }
 
 .digit-button,
 .action-button {
-    padding: 16px;
-    border: none;
-    border-radius: 8px;
-    background-color: var(--adyen-dark-color);
-    color: var(--semi-white-color);
+    height: 2.3em;
+    border: 0;
+    border-radius: 0.45em;
+    font: inherit;
+    font-weight: 700;
     cursor: pointer;
-    font-weight: bolder;
-    filter: brightness(0.9);
-    box-shadow: 0 0 12px rgba(255, 255, 255, 0.3);
-    outline: none;
-    transition: transform 0.1s ease-out, filter 0.15s ease-in-out;
+    color: #fff;
+    background: #3d4248;
+    box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
 }
 
-.action-button.yellow {
-    background-color: var(--yellow-color);
-}
-
-.action-button.red {
-    background-color: var(--red-color);
-}
-
-.action-button.green {
-    background-color: var(--adyen-green-color);
-}
-
-.digit-button:hover,
-.action-button:hover {
-    filter: brightness(1.11);
-    transform: scale(1.03);
-}
-
-.digit-button:focus,
-.action-button:focus {
-    outline: none;
+.digit-button:hover {
+    background: #4a5057;
 }
 
 .digit-button:active,
 .action-button:active {
-    transform: translateY(2px);
+    transform: translateY(1px);
+    box-shadow: none;
 }
 
-/* Terminal end */
-
-
-/* Screen pin start */
-.screen-pin {
-    justify-content: center;
-    text-align: center;
-    padding: 10px;
-    font-size: 24px;
-    font-weight: bolder;
-    letter-spacing: 12px;
-    height: 48px;
-    border: 1px solid var(--gray-highlight-color);
-    border-radius: 8px;
-    margin-left: 48px;
-    margin-right: 48px;
+.action-button.red {
+    background: #d64541;
 }
 
-.screen-pin.hidden {
-    border: 0 solid var(--gray-highlight-color);
+.action-button.yellow {
+    background: #e0a526;
+    color: #222;
 }
 
-/* Screen pin end */
-
-
-/* Button start */
-.button {
-    margin-left: 8px;
-    padding: 4px;
-    width: 96px;
-    outline: none;
-    cursor: pointer;
-    color: var(--semi-white-color);
-    border: 1px solid var(--gray-accent-color);
-    border-radius: 8px;
-    transition: transform 0.1s ease-out, filter 0.15s ease-in-out;
+.action-button.green {
+    background: #2e9d4a;
 }
 
-.button.green {
-    background-color: var(--adyen-green-color);
+/* ---------- Messages pane ---------- */
+
+.messages-pane {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
 }
 
-.button.yellow {
-    background-color: var(--yellow-color);
+.messages-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
 }
 
-.button:hover {
-    transform: scale(1.05);
-}
-
-.button:focus {
-    outline: none;
-}
-
-.button:active {
-    transform: translateY(2px);
-}
-
-/* Button end */
-
-
-/* Codeblock highlight start */
-code {
-    border-radius: 8px;
-}
-
-.request {
+.messages-title {
     margin: 0;
-    position: relative;
-    font-weight: bold;
-    max-width: 800px;
-    white-space: nowrap;
-    word-wrap: break-word;
+    font-size: 1rem;
+    font-weight: 650;
 }
 
-.response {
-    margin: 0;
-    position: relative;
-    font-weight: bold;
-    max-width: 800px;
-    white-space: nowrap;
-    word-wrap: break-word;
+.messages-collapsed .messages-title,
+.messages-collapsed .messages-body {
+    display: none;
 }
 
-.maximize-height {
-    height: 26vh;
+.messages-collapsed .messages-header {
+    border-bottom: 0;
+    padding: 12px 8px;
 }
 
-/* Codeblock highlight end */
-
-
-/* Copy button start */
-.copy-button {
-    position: absolute;
-    bottom: 74px;
-    right: 32px;
-    margin: 0 0 0 8px;
-    padding: 4px;
-    width: 96px;
-    height: 48px;
-    cursor: pointer;
-    color: var(--semi-white-color);
-    background-color: var(--gray-dark-color);
-    border-radius: 8px;
-    border: none;
-    outline: none;
-    transition: transform 0.1s ease-out, filter 0.15s ease-in-out;
-    z-index: 99;
+.messages-body {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    flex: 1;
 }
 
-.copy-button:hover {
-    transform: scale(1.03);
+.send-row {
+    display: flex;
+    gap: 8px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
 }
 
-.copy-button:focus {
-    outline: none;
+.request-dropdown {
+    flex: 1;
+    min-width: 0;
 }
 
-.copy-button:active {
-    transform: translateY(2px);
-}
-
-/* Copy button end */
-
-
-/* Indicator highlight start */
-
-.indicator-highlight-start {
-    filter: brightness(1.11);
-    transform: scale(1.03);
-    transition: transform 0.3s ease-in-out, filter 0.3s ease-in-out;
-}
-
-.indicator-highlight-end {
-    filter: brightness(1);
-    transform: scale(1);
-    transition: transform 0.4s ease-in-out, filter 0.4s ease-in-out;
-}
-
-
-/* Indicator highlight end */
-.auto-confirm {
-    margin-left: 16px;
-    color: white;
-    font-weight: 600;
-    cursor: pointer;
-    white-space: nowrap;
-}
-
-.auto-confirm input {
-    width: 18px;
-    height: 18px;
-    vertical-align: middle;
-    cursor: pointer;
-}
-
-.card-select {
-    margin-left: 6px;
-    padding: 4px;
+.request-dropdown,
+.device-select,
+.device-number {
+    padding: 5px 8px;
+    border: 1px solid var(--border);
     border-radius: 6px;
-    font-weight: 400;
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+    font-size: 0.9rem;
+}
+
+.button,
+.pane-toggle,
+.copy-button {
+    padding: 5px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface-muted);
+    color: var(--text);
+    font: inherit;
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+
+.button.primary {
+    border-color: transparent;
+    background: var(--accent);
+    color: light-dark(#fff, #0d1117);
+    font-weight: 600;
+}
+
+.message-list {
+    list-style: none;
+    margin: 0;
+    padding: 8px 8px 16px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.message-list:empty {
+    display: none;
+}
+
+.message-empty {
+    margin: 16px;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.message {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 6px;
+    background: var(--surface);
+}
+
+.message > summary {
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    cursor: pointer;
+    font-size: 0.88rem;
+    list-style: none;
+}
+
+.message > summary::-webkit-details-marker {
+    display: none;
+}
+
+.message[open] > summary {
+    border-bottom: 1px solid var(--border);
+}
+
+.message-time {
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.message-what {
+    font-weight: 600;
+}
+
+.message-detail {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-muted);
+}
+
+.message-result {
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    white-space: nowrap;
+    background: var(--surface-muted);
+}
+
+.message-result[data-tone="approved"] {
+    color: var(--approved);
+}
+
+.message-result[data-tone="declined"] {
+    color: var(--declined);
+}
+
+.message-result[data-tone="busy"] {
+    color: var(--busy);
+}
+
+.message-block {
+    padding: 8px 10px 10px;
+}
+
+.message-block-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.copy-button {
+    padding: 2px 8px;
+    font-size: 0.75rem;
+}
+
+.message-block pre {
+    margin: 0;
+    max-height: 340px;
+    overflow: auto;
+    border-radius: 6px;
+    background: var(--surface-muted);
+}
+
+.message-block code {
+    display: block;
+    padding: 8px 10px;
+    font-size: 0.78rem;
+    background: transparent;
+}
+
+/* JSON colours for both schemes (instead of highlight.js's default theme). */
+.message-block .hljs {
+    color: var(--text);
+    background: transparent;
+}
+
+.message-block .hljs-attr {
+    color: light-dark(#0b5cad, #7ee787);
+}
+
+.message-block .hljs-string {
+    color: light-dark(#1a7f37, #a5d6ff);
+}
+
+.message-block .hljs-number,
+.message-block .hljs-literal {
+    color: light-dark(#b35900, #ffa657);
+}
+
+.message-block .hljs-punctuation {
+    color: var(--text-muted);
+}
+
+/* ---------- Device panel (as the virtual thermal printer's) ---------- */
+
+.device-panel {
+    position: relative;
+    align-self: end;
+    width: 300px;
+    max-width: calc(100% - 32px);
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+    font-size: 0.88rem;
+}
+
+.device-panel.is-collapsed {
+    width: auto;
+}
+
+.device-panel.is-collapsed .device-panel-body {
+    display: none;
+}
+
+.device-panel-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+    padding: 3px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface-muted);
+    color: var(--text);
+    font: inherit;
+    cursor: pointer;
+}
+
+.device-panel:not(.is-collapsed) .device-panel-toggle {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+}
+
+.device-panel:not(.is-collapsed) #device-panel-light {
+    display: none;
+}
+
+.device-panel-body {
+    display: grid;
+    gap: 8px;
+}
+
+.device-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 28px;
+    padding-right: 64px;
+}
+
+.device-light {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--approved);
+    flex: none;
+}
+
+.device-light[data-state="busy"] {
+    background: var(--busy);
+}
+
+.device-option {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+}
+
+.device-option-indent {
+    padding-left: 22px;
+    color: var(--text-muted);
+}
+
+.device-number {
+    width: 90px;
+}
+
+.device-number:disabled {
+    opacity: 0.5;
+}
+
+.device-select {
+    flex: 1;
+    min-width: 0;
+}
+
+.connect {
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+}
+
+.connect summary {
+    cursor: pointer;
+}
+
+.connect p {
+    margin: 6px 0 0;
+    color: var(--text-muted);
+    font-size: 0.8rem;
 }
