@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const paths = require('../paths');
 
 /**
  * Traverses the `/public/payloads`-folder and parse the respective `*Request` and `*Response`-pairs as JSON Objects.
@@ -7,10 +8,21 @@ const path = require('path');
 class PayloadsService {
     constructor() {
         if (!PayloadsService.instance) {
-            this.data = getRequestsAndResponses(path.join(__dirname, '../../public/payloads'));
+            this.loaded = null;
         }
 
         return PayloadsService.instance;
+    }
+
+    /**
+     * The payloads, read from `public/payloads` when first needed (so the desktop app can say
+     * where its files are before that).
+     */
+    get data() {
+        if (!this.loaded) {
+            this.loaded = getRequestsAndResponses(paths.payloadsDir());
+        }
+        return this.loaded;
     }
 
     /**
