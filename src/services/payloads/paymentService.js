@@ -98,9 +98,12 @@ class PaymentService {
             return false;
         }
 
-        // The payment ends now: the terminal is free for the next one before the abort is answered.
+        // The payment ends now, before the abort is answered: the terminal is free for the next
+        // payment, and the waiting request resolves at once, so its response is built and stored
+        // (for a TransactionStatusRequest) before the server handles another request.
         payment.outcome = OUTCOMES.ABORTED;
         this.finish(payment);
+        payment.end?.(OUTCOMES.ABORTED);
         return true;
     }
 
@@ -122,8 +125,21 @@ class PaymentService {
      * @returns {Promise<String>} - One of OUTCOMES.
      */
     getPinResultAsync = async (payment) => {
-        return new Promise(async resolve => {
+        return new Promise(async settle => {
             let totalSeconds = pinTimeoutSeconds();
+            let timer = null;
+            let ended = false;
+            const resolve = (outcome) => {
+                if (ended) {
+                    return;
+                }
+                ended = true;
+                clearTimeout(timer);
+                settle(outcome);
+            };
+            // Lets abort() end the payment without waiting for the next poll.
+            payment.end = resolve;
+
             const waitForPinResult = () => {
                 if (payment.outcome) {
                     // Ended by an AbortRequest. The terminal's state may already belong to the next payment.
@@ -141,7 +157,7 @@ class PaymentService {
                     // Waiting `totalSeconds` for user to enter pin...
                     console.info("Waiting for pin input... " + totalSeconds);
                     totalSeconds--;
-                    setTimeout(waitForPinResult, 1000);
+                    timer = setTimeout(waitForPinResult, 1000);
                 } else {
                     // Time out.
                     console.info("Request has timed-out.");

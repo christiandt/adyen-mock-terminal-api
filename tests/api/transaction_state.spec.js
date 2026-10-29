@@ -220,3 +220,16 @@ test('Store - reusing a SaleID and ServiceID does not grow the payment index', (
   expect(store.findPayment('MoCk001004.PSP1004')).toBeDefined();
   expect(store.findPayment('MoCk000.PSP0')).toBeUndefined();
 });
+
+test('Abort - the aborted payment can be looked up right after the abort is answered', async ({ request }) => {
+  const id = serviceId();
+  const pending = request.post('/sync', { data: paymentRequest(300, id) });
+  await waitUntilBusy(request);
+
+  await request.post('/sync', { data: abortRequest(id) });
+  const status = await sync(request, statusRequest({ MessageCategory: 'Payment', SaleID: 'FloristIT-kasse-1', ServiceID: id }));
+  const response = status.SaleToPOIResponse.TransactionStatusResponse;
+  expect(response.Response.Result).toBe('Success');
+  expect(response.RepeatedMessageResponse.RepeatedResponseMessageBody.PaymentResponse.Response.ErrorCondition).toBe('Aborted');
+  await pending;
+});
