@@ -27,23 +27,20 @@ jobs:
   test:
     timeout-minutes: 20
     runs-on: ubuntu-latest
+    # Playwright's image for the version in package-lock.json, with its browsers and their system
+    # libraries. `npx playwright install --with-deps` cannot install them on the runner's Ubuntu
+    # (26.04), which Playwright 1.41 does not know.
+    container:
+      image: mcr.microsoft.com/playwright:v1.41.2-jammy
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
-    
-    - name: Setup Node.js
-      uses: actions/setup-node@v3
-      with:
-        node-version: 18
+      uses: actions/checkout@v4
 
     - name: Install dependencies
       run: npm ci
 
-    - name: Run Mock Terminal-API Application in background (&)
-      run: npm start &
-
-    - name: Install Playwright Browsers
-      run: npx playwright install --with-deps
-
-    - name: Run Playwright tests
-      run: npx playwright test
+    - name: Run Playwright tests against the Mock Terminal-API Application
+      run: |
+        npm start &
+        for i in $(seq 1 30); do curl -sf -o /dev/null http://localhost:3000/ && break; sleep 1; done
+        npx playwright test
