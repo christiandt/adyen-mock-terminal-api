@@ -47,17 +47,38 @@ function newPspReference() {
 let tenderSequence = 0;
 
 /**
- * The terminal's transaction ID, "<tender reference>.<PSP reference>" as Adyen documents it
- * (e.g. "BV0q001765198054002.CWBC43ZX2VTFWR82"). The tender reference is shaped like a
- * terminal's: four characters, "00", the Unix time in seconds and a three-digit counter.
- * @param {String} pspReference
+ * A new tender reference, shaped like a terminal's: four characters, "00", the Unix time in
+ * seconds and a three-digit counter (cf. Adyen's "BV0q001765198054002").
  * @returns {String}
  */
-function poiTransactionId(pspReference) {
+function newTenderReference() {
     tenderSequence = (tenderSequence % 999) + 1;
     const seconds = Math.floor(Date.now() / 1000);
-    return `MoCk00${seconds}${String(tenderSequence).padStart(3, "0")}.${pspReference}`;
+    return `MoCk00${seconds}${String(tenderSequence).padStart(3, "0")}`;
 }
+
+/**
+ * The terminal's transaction ID, "<tender reference>.<PSP reference>" as Adyen documents it
+ * (e.g. "BV0q001765198054002.CWBC43ZX2VTFWR82").
+ * @param {String} pspReference
+ * @param {String} [tenderReference] - The payment's tender reference; a new one if omitted.
+ * @returns {String}
+ */
+function poiTransactionId(pspReference, tenderReference = newTenderReference()) {
+    return `${tenderReference}.${pspReference}`;
+}
+
+/**
+ * How a payment that did not reach the PIN confirmation ends, from the `abortPayment` payload:
+ * - aborted by an AbortRequest: ErrorCondition "Aborted" (as Adyen's "Cancel a transaction" says);
+ * - cancelled on the terminal: "Cancel", with Adyen's refusal reason "Shopper cancelled";
+ * - timed out waiting for the shopper: "Cancel", which Adyen uses for device time-outs.
+ */
+const ENDINGS = {
+    ABORTED: { ErrorCondition: "Aborted", AdditionalResponse: "message=104%20Merchant%20cancelled" },
+    CANCELLED: { ErrorCondition: "Cancel", AdditionalResponse: "refusalReason=Shopper%20cancelled&message=CANCELLED" },
+    TIMED_OUT: { ErrorCondition: "Cancel" },
+};
 
 /**
  * An amount in the currency's minor units, e.g. 667.5 NOK -> 66750, 100 JPY -> 100, 1.234 BHD -> 1234.
@@ -119,7 +140,7 @@ function approvedAdditionalResponse({ pspReference, amountsReq, saleTransactionI
 /**
  * Fills in a PaymentResponse from its PaymentRequest.
  */
-function buildPaymentResponse(response, request, card) {
+function buildPaymentResponse(response, request, card, { tenderReference, outcome } = {}) {
     const paymentRequest = request?.SaleToPOIRequest?.PaymentRequest;
     const paymentResponse = response?.SaleToPOIResponse?.PaymentResponse;
     if (!paymentRequest || !paymentResponse) {
@@ -140,7 +161,7 @@ function buildPaymentResponse(response, request, card) {
     // A new transaction on the terminal.
     paymentResponse.POIData = {
         ...paymentResponse.POIData,
-        POITransactionID: { TimeStamp: now, TransactionID: poiTransactionId(pspReference) },
+        POITransactionID: { TimeStamp: now, TransactionID: poiTransactionId(pspReference, tenderReference) },
     };
 
     const result = paymentResponse.PaymentResult;
@@ -149,6 +170,11 @@ function buildPaymentResponse(response, request, card) {
         if (poiid) {
             result.PaymentAcquirerData.AcquirerPOIID = poiid;
         }
+    }
+
+    const ending = ENDINGS[outcome];
+    if (ending && paymentResponse.Response) {
+        paymentResponse.Response = { Result: "Failure", ...ending };
     }
 
     if (paymentResponse.Response?.Result !== "Success") {
@@ -183,7 +209,7 @@ function buildPaymentResponse(response, request, card) {
 /**
  * Fills in a ReversalResponse from its ReversalRequest.
  */
-function buildReversalResponse(response, request) {
+function buildReversalResponse(response, request, findPayment) {
     const reversalRequest = request?.SaleToPOIRequest?.ReversalRequest;
     const reversalResponse = response?.SaleToPOIResponse?.ReversalResponse;
     if (!reversalRequest || !reversalResponse) {
@@ -196,24 +222,35 @@ function buildReversalResponse(response, request) {
         ...reversalResponse.POIData,
         POITransactionID: { TimeStamp: now, TransactionID: poiTransactionId(pspReference) },
     };
-    // The refund's own PSP reference is in POITransactionID. Its AdditionalResponse (with
-    // posOriginalAmountValue, the reversed payment's amount) needs that payment, which the
-    // mock does not keep yet, so the recorded one is returned.
+    // The refund's own PSP reference is in POITransactionID. Its AdditionalResponse holds
+    // posOriginalAmountValue: the reversed payment's amount, in minor units.
+    const original = reversalRequest.OriginalPOITransaction?.POITransactionID?.TransactionID;
+    const payment = original && findPayment ? findPayment(original) : undefined;
+    const amounts = payment?.PaymentResponse?.PaymentResult?.AmountsResp;
+    if (reversalResponse.Response?.Result === "Success") {
+        reversalResponse.Response.AdditionalResponse = amounts
+            ? new URLSearchParams({ posOriginalAmountValue: String(minorUnits(amounts.AuthorizedAmount, amounts.Currency)) }).toString()
+            : "";
+    }
 }
 
 /**
  * Returns the response for `request`, built from the canned `template` (left unchanged).
  * @param {Object} template - The recorded response JSON.
  * @param {Object} request - The request body.
- * @param {Object} [card] - The card an approved payment is made with.
+ * @param {Object} [options]
+ * @param {Object} [options.card] - The card an approved payment is made with.
+ * @param {String} [options.tenderReference] - The payment's tender reference.
+ * @param {String} [options.outcome] - How the payment ended, when not with a PIN: ABORTED, CANCELLED or TIMED_OUT.
+ * @param {Function} [options.findPayment] - Looks up a payment's SaleToPOIResponse by POITransactionID.
  * @returns {Object}
  */
-function buildResponse(template, request, card = DEFAULT_CARD) {
+function buildResponse(template, request, { card = DEFAULT_CARD, tenderReference, outcome, findPayment } = {}) {
     const response = structuredClone(template);
     echoHeader(response, request);
-    buildPaymentResponse(response, request, card);
-    buildReversalResponse(response, request);
+    buildPaymentResponse(response, request, card, { tenderReference, outcome });
+    buildReversalResponse(response, request, findPayment);
     return response;
 }
 
-module.exports = { buildResponse, minorUnits, newPspReference, DEFAULT_CARD };
+module.exports = { buildResponse, minorUnits, newPspReference, newTenderReference, DEFAULT_CARD };

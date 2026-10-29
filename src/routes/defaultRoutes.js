@@ -1,6 +1,9 @@
 const payloadService = require('../services/payloadsService');
 const { userInteractionService, STATES } = require('../services/userInteractionService');
 const paymentService = require('../services/payloads/paymentService');
+const { OUTCOMES } = require('../services/payloads/paymentService');
+const transactionStore = require('../services/transactionStore');
+const { buildTransactionStatusResponse } = require('../services/transactionStatusService');
 const { buildResponse } = require('../services/responseBuilder');
 const express = require('express');
 const router = express.Router();
@@ -26,35 +29,45 @@ router.post("/sync", async (req, res) => {
     userInteractionService.setLastResponse({});
     
     try {
-        // Handle abort request.
+        // Handle abort request: Adyen answers it with 200 OK and no body, and ends the payment it
+        // names with ErrorCondition "Aborted".
         if (req.body.SaleToPOIRequest.AbortRequest) {
-            userInteractionService.setState(STATES.READY);
-            sendOKResponse(req, res, "abortPayment");
+            paymentService.abort(req.body.SaleToPOIRequest.AbortRequest.MessageReference);
+            res.status(200).end();
+            return;
+        }
+
+        // Handle transactionStatus request; answered while a payment is in progress too.
+        if (req.body.SaleToPOIRequest.TransactionStatusRequest) {
+            send(res, buildTransactionStatusResponse(req.body));
             return;
         }
 
         // Handle paymentBusy response.
         if (userInteractionService.getState() === STATES.BUSY) {
-            sendOKResponse(req, res, "paymentBusy");
+            send(res, buildResponse(payloadService.getResponseByPrefix("paymentBusy"), req.body));
             return;
         }
 
         // Handle payment request.
         if (paymentService.containsPrefix(req)) {
-            const paymentResponse = await paymentService.getResponse(req);
-            sendOKResponse(req, res, paymentResponse);
+            const { outcome, prefix, tenderReference } = await paymentService.getResponse(req);
+            const response = buildResponse(payloadService.getResponseByPrefix(prefix), req.body, {
+                tenderReference,
+                outcome: outcome === OUTCOMES.CONFIRMED ? undefined : outcome,
+            });
+            transactionStore.save("Payment", req.body, response);
+            send(res, response);
             return;
         }
 
         // Handle reversal request.
         if (req.body.SaleToPOIRequest.ReversalRequest) {
-            sendOKResponse(req, res, "reversal");
-            return;
-        }
-
-        // Handle paymentTransactionStatus request.
-        if (req.body.SaleToPOIRequest.TransactionStatusRequest) {
-            sendOKResponse(req, res, "paymentTransactionStatus");
+            const response = buildResponse(payloadService.getResponseByPrefix("reversal"), req.body, {
+                findPayment: (id) => transactionStore.findPayment(id),
+            });
+            transactionStore.save("Reversal", req.body, response);
+            send(res, response);
             return;
         }
 
@@ -65,20 +78,16 @@ router.post("/sync", async (req, res) => {
     } catch (e) {
         userInteractionService.setState(STATES.READY);
         console.error(e);
+        if (!res.headersSent) {
+            res.status(500).send({});
+        }
     }
 });
 
 /**
- * Helper function that returns a 200 response for given `prefix` key, built for the request `req`.
- * If {} is provided as prefix, we skip the look-up and return {}.
+ * Sends `response` with 200 OK and shows it as the last response.
  */
-function sendOKResponse(req, res, prefix) {
-    if (prefix === {}) {
-        res.status(200).send({})
-        return;
-    }
-    
-    const response = buildResponse(payloadService.getResponseByPrefix(prefix), req.body);
+function send(res, response) {
     userInteractionService.setLastResponse(response);
     res.status(200).send(response);
 }

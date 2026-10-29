@@ -23,7 +23,9 @@ async function sendPostRequest(url, data) {
         },
     });
 
-    return res.json();
+    // An AbortRequest is answered with 200 OK and no body.
+    const text = await res.text();
+    return text ? JSON.parse(text) : {};
 }
 
 async function pollEndpoint(endpoint, callback, milliseconds = 400) {
