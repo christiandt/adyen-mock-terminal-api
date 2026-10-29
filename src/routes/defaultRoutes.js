@@ -1,6 +1,7 @@
 const payloadService = require('../services/payloadsService');
 const { userInteractionService, STATES } = require('../services/userInteractionService');
 const paymentService = require('../services/payloads/paymentService');
+const { buildResponse } = require('../services/responseBuilder');
 const express = require('express');
 const router = express.Router();
 
@@ -28,32 +29,32 @@ router.post("/sync", async (req, res) => {
         // Handle abort request.
         if (req.body.SaleToPOIRequest.AbortRequest) {
             userInteractionService.setState(STATES.READY);
-            sendOKResponse(res, "abortPayment");
+            sendOKResponse(req, res, "abortPayment");
             return;
         }
 
         // Handle paymentBusy response.
         if (userInteractionService.getState() === STATES.BUSY) {
-            sendOKResponse(res, "paymentBusy");
+            sendOKResponse(req, res, "paymentBusy");
             return;
         }
 
         // Handle payment request.
         if (paymentService.containsPrefix(req)) {
             const paymentResponse = await paymentService.getResponse(req);
-            sendOKResponse(res, paymentResponse);
+            sendOKResponse(req, res, paymentResponse);
             return;
         }
 
         // Handle reversal request.
         if (req.body.SaleToPOIRequest.ReversalRequest) {
-            sendOKResponse(res, "reversal");
+            sendOKResponse(req, res, "reversal");
             return;
         }
 
         // Handle paymentTransactionStatus request.
         if (req.body.SaleToPOIRequest.TransactionStatusRequest) {
-            sendOKResponse(res, "paymentTransactionStatus");
+            sendOKResponse(req, res, "paymentTransactionStatus");
             return;
         }
 
@@ -68,16 +69,16 @@ router.post("/sync", async (req, res) => {
 });
 
 /**
- * Helper function that returns a 200 response for given `prefix` key.
+ * Helper function that returns a 200 response for given `prefix` key, built for the request `req`.
  * If {} is provided as prefix, we skip the look-up and return {}.
  */
-function sendOKResponse(res, prefix) {
+function sendOKResponse(req, res, prefix) {
     if (prefix === {}) {
         res.status(200).send({})
         return;
     }
     
-    const response = payloadService.getResponseByPrefix(prefix);
+    const response = buildResponse(payloadService.getResponseByPrefix(prefix), req.body);
     userInteractionService.setLastResponse(response);
     res.status(200).send(response);
 }
