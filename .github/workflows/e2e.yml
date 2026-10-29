@@ -40,6 +40,9 @@ jobs:
       run: npm ci
 
     - name: Run Playwright tests against the Mock Terminal-API Application
+      env:
+        # A short PIN time-out for the server and the tests, so the time-out test runs.
+        PIN_TIMEOUT_SECONDS: 20
       run: |
         npm start &
         for i in $(seq 1 30); do curl -sf -o /dev/null http://localhost:3000/ && break; sleep 1; done
