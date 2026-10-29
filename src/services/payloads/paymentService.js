@@ -1,6 +1,7 @@
 const { userInteractionService, STATES } = require("../userInteractionService");
 const transactionStore = require("../transactionStore");
 const { newTenderReference } = require("../responseBuilder");
+const terminalSettings = require("../terminalSettings");
 
 const paymentFailureMap = {
     "124": "124_paymentNotEnoughBalance",
@@ -128,6 +129,7 @@ class PaymentService {
         return new Promise(async settle => {
             let totalSeconds = pinTimeoutSeconds();
             let timer = null;
+            let autoTimer = null;
             let ended = false;
             const resolve = (outcome) => {
                 if (ended) {
@@ -135,10 +137,20 @@ class PaymentService {
                 }
                 ended = true;
                 clearTimeout(timer);
+                clearTimeout(autoTimer);
                 settle(outcome);
             };
             // Lets abort() end the payment without waiting for the next poll.
             payment.end = resolve;
+
+            // With autoConfirm on, the PIN is "entered" after the configured delay.
+            const { autoConfirm, autoConfirmDelayMs } = terminalSettings.get();
+            if (autoConfirm) {
+                autoTimer = setTimeout(() => {
+                    console.info("Auto-confirmed the PIN.");
+                    resolve(OUTCOMES.CONFIRMED);
+                }, autoConfirmDelayMs);
+            }
 
             const waitForPinResult = () => {
                 if (payment.outcome) {

@@ -5,7 +5,7 @@ const utilities = require('../utilities');
 test('Payment - Success', async ({ page }) => {
   await page.goto('/');
 
-  await page.getByLabel('').selectOption('payment');
+  await page.locator('#request-dropdown').selectOption('payment');
 
   await page.getByRole('button', { name: 'Clear' }).click();
   await page.getByRole('button', { name: 'Send' }).click();

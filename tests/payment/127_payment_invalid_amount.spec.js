@@ -5,7 +5,7 @@ const utilities = require('../utilities');
 test('127 Payment - Invalid Amount', async ({ page }) => {
   await page.goto('/');
 
-  await page.getByLabel('').selectOption('127_paymentInvalidAmount');
+  await page.locator('#request-dropdown').selectOption('127_paymentInvalidAmount');
 
   await page.getByRole('button', { name: 'Clear' }).click();
   await page.getByRole('button', { name: 'Send' }).click();

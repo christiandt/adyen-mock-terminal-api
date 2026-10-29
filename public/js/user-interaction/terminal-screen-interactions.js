@@ -112,3 +112,20 @@ function bindAllTerminalButtons() {
 bindAllTerminalButtons();
 
 pollEndpoint('/user-interaction/get-state', updateState);
+
+// Binds the "Auto-confirm PIN" checkbox to the terminal's settings.
+(async function bindAutoConfirmCheckbox() {
+    const checkbox = document.getElementById("auto-confirm-checkbox");
+    if (!checkbox) {
+        return;
+    }
+    try {
+        checkbox.checked = (await sendGetRequest("/user-interaction/settings")).autoConfirm;
+    } catch (error) {
+        console.error(error);
+    }
+    checkbox.addEventListener("change", async () => {
+        const settings = await sendPostRequest("/user-interaction/settings", { autoConfirm: checkbox.checked });
+        checkbox.checked = settings.autoConfirm === true;
+    });
+})();

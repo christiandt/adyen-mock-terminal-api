@@ -303,3 +303,17 @@ code {
 
 
 /* Indicator highlight end */
+.auto-confirm {
+    margin-left: 16px;
+    color: white;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.auto-confirm input {
+    width: 18px;
+    height: 18px;
+    vertical-align: middle;
+    cursor: pointer;
+}

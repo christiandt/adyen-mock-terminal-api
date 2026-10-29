@@ -1,4 +1,5 @@
 const { userInteractionService, STATES } = require('../services/userInteractionService');
+const terminalSettings = require('../services/terminalSettings');
 const express = require('express');
 const router = express.Router();
 
@@ -24,6 +25,27 @@ router.post("/clear-codeblocks-button", async (req, res) => {
 });
 
 /* Request & response code-blocks screen polling end */
+
+
+
+/* Terminal settings start */
+
+// The terminal's settings, e.g. { "autoConfirm": false, "autoConfirmDelayMs": 1000 }.
+router.get("/settings", async (_req, res) => {
+    res.status(200).json(terminalSettings.get());
+});
+
+// Changes any of the settings; answers with all of them, or 400 with an error.
+router.post("/settings", async (req, res) => {
+    const { settings, error } = terminalSettings.update(req.body);
+    if (error) {
+        res.status(400).json({ error });
+        return;
+    }
+    res.status(200).json(settings);
+});
+
+/* Terminal settings end */
 
 
 
