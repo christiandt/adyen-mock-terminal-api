@@ -21,6 +21,15 @@ const DEFAULT_CARD = {
     entryMode: "ICC",
 };
 
+// Currencies whose minor unit is not 2 decimals, from Adyen's currency table
+// (https://docs.adyen.com/development-resources/currency-codes). Adyen's table is what
+// counts, not ISO 4217: ISK, for one, has 2 decimals at Adyen.
+const CURRENCY_DECIMALS = {
+    BHD: 3, IQD: 3, JOD: 3, KWD: 3, LYD: 3, OMR: 3, TND: 3,
+    CVE: 0, DJF: 0, GNF: 0, IDR: 0, JPY: 0, KMF: 0, KRW: 0, PYG: 0,
+    RWF: 0, UGX: 0, VND: 0, VUV: 0, XAF: 0, XOF: 0, XPF: 0,
+};
+
 const ALPHANUMERIC = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
 /**
@@ -35,22 +44,30 @@ function newPspReference() {
     return reference;
 }
 
+let tenderSequence = 0;
+
 /**
- * The terminal's transaction ID: "<tender reference>.<PSP reference>".
+ * The terminal's transaction ID, "<tender reference>.<PSP reference>" as Adyen documents it
+ * (e.g. "BV0q001765198054002.CWBC43ZX2VTFWR82"). The tender reference is shaped like a
+ * terminal's: four characters, "00", the Unix time in seconds and a three-digit counter.
  * @param {String} pspReference
  * @returns {String}
  */
 function poiTransactionId(pspReference) {
-    return `MOCK${Date.now()}.${pspReference}`;
+    tenderSequence = (tenderSequence % 999) + 1;
+    const seconds = Math.floor(Date.now() / 1000);
+    return `MoCk00${seconds}${String(tenderSequence).padStart(3, "0")}.${pspReference}`;
 }
 
 /**
- * An amount in minor units, e.g. 667.5 -> 66750.
+ * An amount in the currency's minor units, e.g. 667.5 NOK -> 66750, 100 JPY -> 100, 1.234 BHD -> 1234.
  * @param {Number} amount
+ * @param {String} currency - ISO 4217 code.
  * @returns {Number}
  */
-function minorUnits(amount) {
-    return Math.round(Number(amount) * 100);
+function minorUnits(amount, currency) {
+    const decimals = CURRENCY_DECIMALS[String(currency).toUpperCase()] ?? 2;
+    return Math.round(Number(amount) * 10 ** decimals);
 }
 
 /**
@@ -71,10 +88,14 @@ function echoHeader(response, request) {
 }
 
 /**
- * The AdditionalResponse of an approved payment, URL-encoded as the terminal sends it.
+ * The AdditionalResponse of an approved payment, as form-encoded key-value pairs: the format
+ * Adyen uses when the request's SaleToAcquirerData is key-value pairs or absent. (A request
+ * with Base64-encoded JSON SaleToAcquirerData gets Base64-encoded JSON from Adyen; that is
+ * not supported here, because Adyen does not document the decoded object's structure.)
+ * Only keys Adyen documents are used.
  */
-function approvedAdditionalResponse({ pspReference, amountsReq, saleTransactionId, poiid, card, now }) {
-    const value = String(minorUnits(amountsReq.RequestedAmount));
+function approvedAdditionalResponse({ pspReference, amountsReq, saleTransactionId, poiid, card }) {
+    const value = String(minorUnits(amountsReq.RequestedAmount, amountsReq.Currency));
     const fields = {
         tid: poiid ? poiid.split("-").pop() : "",
         transactionType: "GOODS_SERVICES",
@@ -82,26 +103,15 @@ function approvedAdditionalResponse({ pspReference, amountsReq, saleTransactionI
         merchantReference: saleTransactionId || "",
         paymentMethod: card.brand,
         paymentMethodVariant: card.brand,
-        cardScheme: card.brand,
-        cardType: card.brand,
         cardBin: card.bin,
         cardSummary: card.last4,
-        expiryMonth: card.expiryMonth,
-        expiryYear: card.expiryYear,
+        expiryDate: `${Number(card.expiryMonth)}/${card.expiryYear}`,
         issuerCountry: card.issuerCountry,
         fundingSource: card.fundingSource,
-        posEntryMode: card.entryMode,
         authCode: String(Math.floor(100000 + Math.random() * 900000)),
         posAuthAmountValue: value,
         posAuthAmountCurrency: amountsReq.Currency,
         posOriginalAmountValue: value,
-        "posadditionalamounts.originalAmountValue": value,
-        "posadditionalamounts.originalAmountCurrency": amountsReq.Currency,
-        posAmountCashbackValue: "0",
-        posAmountGratuityValue: "0",
-        iso8601TxDate: now,
-        txdate: now.slice(8, 10) + "-" + now.slice(5, 7) + "-" + now.slice(0, 4),
-        txtime: now.slice(11, 19),
     };
     return new URLSearchParams(fields).toString();
 }
@@ -142,10 +152,8 @@ function buildPaymentResponse(response, request, card) {
     }
 
     if (paymentResponse.Response?.Result !== "Success") {
-        // A refused payment keeps its recorded refusal reason, and gets its own PSP reference.
-        const additional = new URLSearchParams(paymentResponse.Response?.AdditionalResponse || "");
-        additional.set("pspReference", pspReference);
-        paymentResponse.Response.AdditionalResponse = additional.toString();
+        // A refused payment keeps its recorded AdditionalResponse (message and refusal reason);
+        // its PSP reference is in the transaction IDs above, as in the recordings.
         return;
     }
 
@@ -168,7 +176,6 @@ function buildPaymentResponse(response, request, card) {
             saleTransactionId: saleTransactionId?.TransactionID,
             poiid,
             card,
-            now,
         });
     }
 }
@@ -189,18 +196,9 @@ function buildReversalResponse(response, request) {
         ...reversalResponse.POIData,
         POITransactionID: { TimeStamp: now, TransactionID: poiTransactionId(pspReference) },
     };
-    if (reversalRequest.ReversedAmount !== undefined) {
-        reversalResponse.ReversedAmount = reversalRequest.ReversedAmount;
-    }
-    if (reversalResponse.Response?.Result === "Success") {
-        const additional = new URLSearchParams({ pspReference });
-        const original = reversalRequest.OriginalPOITransaction?.POITransactionID?.TransactionID;
-        if (original) {
-            // The PSP reference of the reversed payment: the part after the tender reference.
-            additional.set("originalPspReference", original.split(".").pop());
-        }
-        reversalResponse.Response.AdditionalResponse = additional.toString();
-    }
+    // The refund's own PSP reference is in POITransactionID. Its AdditionalResponse (with
+    // posOriginalAmountValue, the reversed payment's amount) needs that payment, which the
+    // mock does not keep yet, so the recorded one is returned.
 }
 
 /**
@@ -218,4 +216,4 @@ function buildResponse(template, request, card = DEFAULT_CARD) {
     return response;
 }
 
-module.exports = { buildResponse, newPspReference, DEFAULT_CARD };
+module.exports = { buildResponse, minorUnits, newPspReference, DEFAULT_CARD };

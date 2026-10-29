@@ -2,6 +2,7 @@
 const { test, expect } = require('@playwright/test');
 const fs = require('fs');
 const path = require('path');
+const { minorUnits } = require('../../src/services/responseBuilder');
 
 const payloads = path.join(__dirname, '../../public/payloads');
 const load = (file) => JSON.parse(fs.readFileSync(path.join(payloads, file), 'utf-8'));
@@ -64,9 +65,9 @@ test('Payment - approved payment carries card details and a PSP reference', asyn
   expect(additional.get('posAuthAmountCurrency')).toBe('NOK');
   expect(additional.get('merchantReference')).toMatch(/^order-175-/);
 
-  // The PSP reference is the acquirer's transaction ID and the end of the terminal's.
+  // "<tender reference>.<PSP reference>", like Adyen's "BV0q001765198054002.CWBC43ZX2VTFWR82".
   expect(payment.PaymentResult.PaymentAcquirerData.AcquirerTransactionID.TransactionID).toBe(psp);
-  expect(payment.POIData.POITransactionID.TransactionID.endsWith(`.${psp}`)).toBe(true);
+  expect(payment.POIData.POITransactionID.TransactionID).toMatch(new RegExp(`^[A-Za-z0-9]{4}00\\d{10}\\d{3}\\.${psp}$`));
 
   const card = payment.PaymentResult.PaymentInstrumentData.CardData;
   expect(card.PaymentBrand).toBe('visa');
@@ -90,11 +91,11 @@ test('Payment - a refused payment keeps its refusal reason and echoes the reques
   expect(payment.Response.ErrorCondition).toBe('Refusal');
   const additional = new URLSearchParams(payment.Response.AdditionalResponse);
   expect(additional.get('refusalReason')).toBe('210 Not enough balance');
-  expect(additional.get('pspReference')).toMatch(/^[A-Z0-9]{16}$/);
+  expect(payment.PaymentResult.PaymentAcquirerData.AcquirerTransactionID.TransactionID).toMatch(/^[A-Z0-9]{16}$/);
   expect(payment.PaymentResult.AmountsResp).toBeUndefined();
 });
 
-test('Reversal - echoes the header and names the reversed payment', async ({ request }) => {
+test('Reversal - echoes the header and gets its own PSP reference', async ({ request }) => {
   const payment = await pay(request, paymentRequest(250));
   const original = payment.SaleToPOIResponse.PaymentResponse.POIData.POITransactionID;
 
@@ -108,9 +109,10 @@ test('Reversal - echoes the header and names the reversed payment', async ({ req
   expect(response.SaleToPOIResponse.MessageHeader.SaleID).toBe('FloristIT-kasse-1');
   const reversal = response.SaleToPOIResponse.ReversalResponse;
   expect(reversal.Response.Result).toBe('Success');
-  const additional = new URLSearchParams(reversal.Response.AdditionalResponse);
-  expect(additional.get('originalPspReference')).toBe(original.TransactionID.split('.').pop());
-  expect(additional.get('pspReference')).toMatch(/^[A-Z0-9]{16}$/);
+  // The refund's own PSP reference is in POITransactionID, not the reversed payment's.
+  const refund = reversal.POIData.POITransactionID.TransactionID;
+  expect(refund).toMatch(/\.[A-Z0-9]{16}$/);
+  expect(refund).not.toBe(original.TransactionID);
 });
 
 test('Canned payloads are not changed by a request', async ({ request }) => {
@@ -119,4 +121,21 @@ test('Canned payloads are not changed by a request', async ({ request }) => {
   const response = await pay(request, load('payment/paymentRequest.json'));
   expect(response.SaleToPOIResponse.PaymentResponse.PaymentResult.AmountsResp).toEqual({ AuthorizedAmount: 1, Currency: 'EUR' });
   expect(response.SaleToPOIResponse.MessageHeader.ServiceID).toBe('1234567890AB');
+});
+
+test('Payment - amounts are in the currency\'s minor units', async ({ request }) => {
+  const response = await pay(request, paymentRequest(100, 'JPY'));
+  const additional = new URLSearchParams(response.SaleToPOIResponse.PaymentResponse.Response.AdditionalResponse);
+  expect(additional.get('posAuthAmountValue')).toBe('100');
+  expect(additional.get('posAuthAmountCurrency')).toBe('JPY');
+});
+
+test('minorUnits follows Adyen\'s currency table', () => {
+  expect(minorUnits(667.5, 'NOK')).toBe(66750);
+  expect(minorUnits(100, 'JPY')).toBe(100);
+  expect(minorUnits(1.234, 'BHD')).toBe(1234);
+  expect(minorUnits(1000, 'IDR')).toBe(1000);
+  // ISK has 0 decimals in ISO 4217, but 2 at Adyen.
+  expect(minorUnits(500, 'ISK')).toBe(50000);
+  expect(minorUnits(0.1 + 0.2, 'EUR')).toBe(30);
 });

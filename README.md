@@ -29,10 +29,12 @@ We currently support the following [Terminal API requests/responses](https://doc
 ### Responses answer the request
 The payloads are recorded responses, but each response is built for the request it answers, as a terminal would:
 - The `MessageHeader` carries the request's `ServiceID`, `SaleID` and `POIID`.
-- A `PaymentResponse` returns the request's `SaleTransactionID` unchanged, and a new `POITransactionID` (`<tender reference>.<PSP reference>`) with a new 16-character PSP reference, also in `AcquirerTransactionID` and `AdditionalResponse`.
-- An approved payment is authorised for exactly the `RequestedAmount` and `Currency`, on Adyen's Visa test card (`411111 **** 1111`): `CardData` and the URL-encoded `AdditionalResponse` carry `paymentMethod`, `cardSummary`, `cardBin`, `posAuthAmountValue` (in minor units), `merchantReference` and so on.
-- A refused payment keeps its recorded refusal reason and gets its own PSP reference.
-- A `ReversalResponse` gets a new PSP reference and names the reversed payment's as `originalPspReference`.
+- A `PaymentResponse` returns the request's `SaleTransactionID` unchanged, and a new `POITransactionID` in Adyen's format `<tender reference>.<PSP reference>` (e.g. `MoCk001761750000001.CWBC43ZX2VTFWR82`), with a new 16-character PSP reference, also in `AcquirerTransactionID`.
+- An approved payment is authorised for exactly the `RequestedAmount` and `Currency`, on Adyen's Visa test card (`411111 **** 1111`) in `CardData`. Its `AdditionalResponse` holds `pspReference`, `merchantReference`, `paymentMethod`, `cardBin`, `cardSummary`, `posAuthAmountValue` and `posOriginalAmountValue` (in the currency's minor units, per [Adyen's currency table](https://docs.adyen.com/development-resources/currency-codes)), and so on.
+- A refused payment keeps its recorded refusal reason.
+- A `ReversalResponse` gets its own PSP reference in `POITransactionID`.
+
+The `AdditionalResponse` is always form-encoded key-value pairs. That is what Adyen returns when the request's `SaleToAcquirerData` is key-value pairs or absent. A request with Base64-encoded JSON `SaleToAcquirerData` would get Base64-encoded JSON from Adyen; the mock does not do that yet.
 
 ### Declined payments
 In general, test payments generate the result Approved. To simulate declined payments, you can change the last three digits of the `RequestedAmount` that you specify in the payment request.
