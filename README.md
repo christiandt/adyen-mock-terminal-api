@@ -47,6 +47,12 @@ The mock remembers the payments and reversals it has handled (the latest 1000), 
 - **Time-out**: a payment nobody enters a PIN for ends as `Failure` / `Cancel`, which Adyen uses for device time-outs, after `PIN_TIMEOUT_SECONDS` (default 180).
 - **ReversalRequest**: the `AdditionalResponse` holds `posOriginalAmountValue`, the reversed payment's amount in minor units.
 
+### Auto-confirm (automated tests)
+With auto-confirm on, a payment is confirmed as if a PIN were entered, after a delay, so automated tests need not drive the terminal screen. Amounts ending in a refusal code are still refused, and a `TransactionStatusRequest` or `AbortRequest` can be sent during the delay.
+- At start-up: `AUTO_CONFIRM=true` and `AUTO_CONFIRM_DELAY_MS` (default `1000`, 0–60000).
+- At runtime: `GET /user-interaction/settings` returns `{ "autoConfirm": false, "autoConfirmDelayMs": 1000 }`; `POST` changes any of them, e.g. `{ "autoConfirm": true, "autoConfirmDelayMs": 0 }`. An invalid value is answered `400` with an `error`.
+- On the page: the "Auto-confirm PIN" checkbox.
+
 ### Declined payments
 In general, test payments generate the result Approved. To simulate declined payments, you can change the last three digits of the `RequestedAmount` that you specify in the payment request.
 - We constructed the mock payloads using a `V400M-` terminal device.
