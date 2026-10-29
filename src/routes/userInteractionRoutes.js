@@ -1,5 +1,6 @@
 const { userInteractionService, STATES } = require('../services/userInteractionService');
 const terminalSettings = require('../services/terminalSettings');
+const paymentService = require('../services/payloads/paymentService');
 const express = require('express');
 const router = express.Router();
 
@@ -87,7 +88,10 @@ router.post("/cancel-button", async (req, res) => {
     }
     
     userInteractionService.clearLastRequestAndResponse();
-    userInteractionService.setState(STATES.READY);
+    // Ends the payment at once, so a pending auto-confirm cannot approve it.
+    if (!paymentService.cancel()) {
+        userInteractionService.setState(STATES.READY);
+    }
 
     console.info("Cancelled entering pin.");
     res.status(200).send({});

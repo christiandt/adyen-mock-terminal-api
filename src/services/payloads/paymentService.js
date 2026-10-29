@@ -109,6 +109,22 @@ class PaymentService {
     }
 
     /**
+     * Ends the payment in progress as cancelled on the terminal (the red cancel button).
+     * @returns {Boolean} - Whether a payment was cancelled.
+     */
+    cancel() {
+        const payment = this.current;
+        if (!payment) {
+            return false;
+        }
+
+        payment.outcome = OUTCOMES.CANCELLED;
+        this.finish(payment);
+        payment.end?.(OUTCOMES.CANCELLED);
+        return true;
+    }
+
+    /**
      * Frees the terminal after `payment`, unless another payment has taken it since.
      */
     finish(payment) {
@@ -147,6 +163,10 @@ class PaymentService {
             const { autoConfirm, autoConfirmDelayMs } = terminalSettings.get();
             if (autoConfirm) {
                 autoTimer = setTimeout(() => {
+                    // A payment that was aborted or cancelled meanwhile keeps that outcome.
+                    if (payment.outcome || this.current !== payment) {
+                        return;
+                    }
                     console.info("Auto-confirmed the PIN.");
                     resolve(OUTCOMES.CONFIRMED);
                 }, autoConfirmDelayMs);
@@ -154,8 +174,8 @@ class PaymentService {
 
             const waitForPinResult = () => {
                 if (payment.outcome) {
-                    // Ended by an AbortRequest. The terminal's state may already belong to the next payment.
-                    console.info("Payment aborted by the sale system.");
+                    // Ended by an AbortRequest or the cancel button. The terminal's state may already belong to the next payment.
+                    console.info(payment.outcome === OUTCOMES.ABORTED ? "Payment aborted by the sale system." : "Cancelled entering-pin by user.");
                     resolve(payment.outcome);
                 } else if (userInteractionService.getIsConfirmed() === true) {
                     // Pin code entered, accept any pin for now.

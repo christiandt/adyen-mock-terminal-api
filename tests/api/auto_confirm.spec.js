@@ -97,3 +97,13 @@ test('Auto-confirm - the checkbox on the page turns it on and off', async ({ pag
   await checkbox.uncheck();
   await expect.poll(async () => (await (await request.get('/user-interaction/settings')).json()).autoConfirm).toBe(false);
 });
+
+test('Auto-confirm - a cancel on the terminal before the delay ends wins', async ({ request }) => {
+  await settings(request, { autoConfirm: true, autoConfirmDelayMs: 300 });
+  const pending = request.post('/sync', { data: paymentRequest(300) });
+  await expect.poll(async () => (await (await request.get('/user-interaction/get-state')).json()).state).toBe('BUSY');
+  await request.post('/user-interaction/cancel-button');
+
+  const response = await (await pending).json();
+  expect(response.SaleToPOIResponse.PaymentResponse.Response).toMatchObject({ Result: 'Failure', ErrorCondition: 'Cancel' });
+});
