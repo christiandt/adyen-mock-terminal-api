@@ -188,3 +188,35 @@ test('Reversal - posOriginalAmountValue is the reversed payment\'s amount; its s
   expect(status.SaleToPOIResponse.TransactionStatusResponse.RepeatedMessageResponse.RepeatedResponseMessageBody.ReversalResponse)
     .toEqual(reversal.SaleToPOIResponse.ReversalResponse);
 });
+
+test('Abort - a payment started right after the abort keeps its own outcome', async ({ request }) => {
+  const aborted = serviceId();
+  const first = request.post('/sync', { data: paymentRequest(300, aborted) });
+  await waitUntilBusy(request);
+
+  // The till starts the next payment as soon as the abort is answered.
+  await request.post('/sync', { data: abortRequest(aborted) });
+  const nextId = serviceId();
+  const next = request.post('/sync', { data: paymentRequest(150, nextId) });
+  await waitUntilBusy(request);
+  await enterPin(request);
+
+  const firstResponse = await (await first).json();
+  const nextResponse = await (await next).json();
+  expect(firstResponse.SaleToPOIResponse.PaymentResponse.Response.ErrorCondition).toBe('Aborted');
+  expect(nextResponse.SaleToPOIResponse.MessageHeader.ServiceID).toBe(nextId);
+  expect(nextResponse.SaleToPOIResponse.PaymentResponse.Response.Result).toBe('Success');
+});
+
+test('Store - reusing a SaleID and ServiceID does not grow the payment index', () => {
+  const store = require('../../src/services/transactionStore');
+  store.clear();
+  const request = paymentRequest(100, 'reused0001');
+  for (let i = 0; i < 1005; i++) {
+    const response = { SaleToPOIResponse: { PaymentResponse: { POIData: { POITransactionID: { TransactionID: `MoCk00${i}.PSP${i}` } } } } };
+    store.save('Payment', request, response);
+  }
+  expect(store.size()).toEqual({ references: 1, payments: 1 });
+  expect(store.findPayment('MoCk001004.PSP1004')).toBeDefined();
+  expect(store.findPayment('MoCk000.PSP0')).toBeUndefined();
+});

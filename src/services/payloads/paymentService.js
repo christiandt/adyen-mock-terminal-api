@@ -35,7 +35,8 @@ function pinTimeoutSeconds() {
 class PaymentService {
     constructor() {
         if (!PaymentService.instance) {
-            this.abortRequested = false;
+            // The payment the terminal is processing: { outcome } once it has ended.
+            this.current = null;
         }
 
         return PaymentService.instance;
@@ -52,16 +53,17 @@ class PaymentService {
     async getResponse(request) {
         const header = request.body.SaleToPOIRequest.MessageHeader || {};
 
-        // Set terminal to busy and start handling logic.
-        this.abortRequested = false;
+        // Set terminal to busy and start handling logic. Each payment has its own record of how
+        // it ended, so a payment started right after an abort cannot take over the aborted one's.
+        const payment = { saleId: header.SaleID, serviceId: header.ServiceID, outcome: null };
         const tenderReference = newTenderReference();
+        this.current = payment;
         transactionStore.setInProgress({ saleId: header.SaleID, serviceId: header.ServiceID, tenderReference });
         userInteractionService.setState(STATES.BUSY);
 
         // Wait for the confirm button if a payment request is sent.
-        const outcome = await this.getPinResultAsync();
-        transactionStore.setInProgress(null);
-        userInteractionService.setState(STATES.READY);
+        const outcome = await this.getPinResultAsync(payment);
+        this.finish(payment);
 
         if (outcome !== OUTCOMES.CONFIRMED) {
             return { outcome, prefix: "abortPayment", tenderReference };
@@ -85,38 +87,56 @@ class PaymentService {
      * @returns {Boolean} - Whether a payment was aborted.
      */
     abort(messageReference) {
-        const inProgress = transactionStore.getInProgress();
-        if (!inProgress || userInteractionService.getState() !== STATES.BUSY) {
+        const payment = this.current;
+        if (!payment) {
             return false;
         }
-        if (messageReference?.ServiceID && messageReference.ServiceID !== inProgress.serviceId) {
+        if (messageReference?.ServiceID && messageReference.ServiceID !== payment.serviceId) {
             return false;
         }
-        if (messageReference?.SaleID && messageReference.SaleID !== inProgress.saleId) {
+        if (messageReference?.SaleID && messageReference.SaleID !== payment.saleId) {
             return false;
         }
 
-        this.abortRequested = true;
-        userInteractionService.setState(STATES.READY);
+        // The payment ends now: the terminal is free for the next one before the abort is answered.
+        payment.outcome = OUTCOMES.ABORTED;
+        this.finish(payment);
         return true;
     }
 
     /**
-     * Blocking call that waits until the payment ends.
+     * Frees the terminal after `payment`, unless another payment has taken it since.
+     */
+    finish(payment) {
+        if (this.current !== payment) {
+            return;
+        }
+        this.current = null;
+        transactionStore.setInProgress(null);
+        userInteractionService.setState(STATES.READY);
+    }
+
+    /**
+     * Blocking call that waits until `payment` ends.
+     * @param {Object} payment - The payment's own record; its `outcome` is set when it is aborted.
      * @returns {Promise<String>} - One of OUTCOMES.
      */
-    getPinResultAsync = async () => {
+    getPinResultAsync = async (payment) => {
         return new Promise(async resolve => {
             let totalSeconds = pinTimeoutSeconds();
             const waitForPinResult = () => {
-                if (userInteractionService.getIsConfirmed() === true) {
+                if (payment.outcome) {
+                    // Ended by an AbortRequest. The terminal's state may already belong to the next payment.
+                    console.info("Payment aborted by the sale system.");
+                    resolve(payment.outcome);
+                } else if (userInteractionService.getIsConfirmed() === true) {
                     // Pin code entered, accept any pin for now.
                     console.info("Confirm-button is pressed.");
                     resolve(OUTCOMES.CONFIRMED);
                 } else if (userInteractionService.getState() === STATES.READY) {
-                    // State changed: an AbortRequest, or the red `cancel-button` was pressed.
-                    console.info(this.abortRequested ? "Payment aborted by the sale system." : "Cancelled entering-pin by user.");
-                    resolve(this.abortRequested ? OUTCOMES.ABORTED : OUTCOMES.CANCELLED);
+                    // State changed: the red `cancel-button` was pressed.
+                    console.info("Cancelled entering-pin by user.");
+                    resolve(OUTCOMES.CANCELLED);
                 } else if (totalSeconds > 0) {
                     // Waiting `totalSeconds` for user to enter pin...
                     console.info("Waiting for pin input... " + totalSeconds);

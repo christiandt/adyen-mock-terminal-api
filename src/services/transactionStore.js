@@ -35,8 +35,14 @@ class TransactionStore {
             return;
         }
 
-        this.byReference.delete(this.key(header.SaleID, header.ServiceID));
-        this.byReference.set(this.key(header.SaleID, header.ServiceID), { category, request, response });
+        // A reused SaleID and ServiceID replaces the earlier transaction, in both indexes.
+        const key = this.key(header.SaleID, header.ServiceID);
+        const replaced = this.byReference.get(key);
+        if (replaced) {
+            this.byReference.delete(key);
+            this.forgetPayment(replaced);
+        }
+        this.byReference.set(key, { category, request, response });
 
         const transactionId = response?.SaleToPOIResponse?.PaymentResponse?.POIData?.POITransactionID?.TransactionID;
         if (category === "Payment" && transactionId) {
@@ -47,11 +53,25 @@ class TransactionStore {
         while (this.byReference.size > MAX_TRANSACTIONS) {
             const [oldest, entry] = this.byReference.entries().next().value;
             this.byReference.delete(oldest);
-            const oldId = entry.response?.SaleToPOIResponse?.PaymentResponse?.POIData?.POITransactionID?.TransactionID;
-            if (oldId) {
-                this.byPoiTransactionId.delete(oldId);
-            }
+            this.forgetPayment(entry);
         }
+    }
+
+    /**
+     * Removes a transaction's entry from the POITransactionID index.
+     */
+    forgetPayment(entry) {
+        const transactionId = entry.response?.SaleToPOIResponse?.PaymentResponse?.POIData?.POITransactionID?.TransactionID;
+        if (transactionId && this.byPoiTransactionId.get(transactionId) === entry.response.SaleToPOIResponse) {
+            this.byPoiTransactionId.delete(transactionId);
+        }
+    }
+
+    /**
+     * The number of transactions in each index.
+     */
+    size() {
+        return { references: this.byReference.size, payments: this.byPoiTransactionId.size };
     }
 
     /**
