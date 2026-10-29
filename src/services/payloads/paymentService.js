@@ -56,7 +56,14 @@ class PaymentService {
 
         // Set terminal to busy and start handling logic. Each payment has its own record of how
         // it ended, so a payment started right after an abort cannot take over the aborted one's.
-        const payment = { saleId: header.SaleID, serviceId: header.ServiceID, outcome: null };
+        const amounts = request.body.SaleToPOIRequest.PaymentRequest.PaymentTransaction?.AmountsReq || {};
+        const payment = {
+            saleId: header.SaleID,
+            serviceId: header.ServiceID,
+            amount: amounts.RequestedAmount,
+            currency: amounts.Currency,
+            outcome: null,
+        };
         const tenderReference = newTenderReference();
         this.current = payment;
         transactionStore.setInProgress({ saleId: header.SaleID, serviceId: header.ServiceID, tenderReference });
@@ -106,6 +113,13 @@ class PaymentService {
         this.finish(payment);
         payment.end?.(OUTCOMES.ABORTED);
         return true;
+    }
+
+    /**
+     * The payment in progress, for the terminal screen: { amount, currency }, or null.
+     */
+    inProgress() {
+        return this.current ? { amount: this.current.amount, currency: this.current.currency } : null;
     }
 
     /**

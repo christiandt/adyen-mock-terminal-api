@@ -4,6 +4,7 @@ const path = require('path');
 const defaultRoutes = require('./src/routes/defaultRoutes');
 const userInteractionRoutes = require('./src/routes/userInteractionRoutes');
 const payloadService = require('./src/services/payloadsService')
+const messageLog = require('./src/services/messageLog');
 const { userInteractionService } = require("./src/services/userInteractionService");
 
 const port = process.env.PORT || 3000;
@@ -15,6 +16,7 @@ app.use((err, req, res, next) => {
     if (err instanceof SyntaxError) {
         const invalidJsonObjectResponse = payloadService.getResponseByPrefix("invalidJsonObjectNotification");
         userInteractionService.setLastResponse(invalidJsonObjectResponse);
+        messageLog.complete(messageLog.add(null), invalidJsonObjectResponse);
         res.status(200).send(invalidJsonObjectResponse);
         return;
     }

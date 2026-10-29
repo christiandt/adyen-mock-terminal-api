@@ -9,7 +9,15 @@ This tool can be used by developers to quickly end-to-end test their application
 
 Currently, we use the Mock Terminal-API Application to [end-to-end test](https://github.com/adyen-examples/adyen-testing-suite/tree/main/tests/in-person-payments) our in-person payments integration-examples in [**.NET**](https://github.com/adyen-examples/adyen-dotnet-online-payments/tree/main/in-person-payments-example), [**Java**](https://github.com/adyen-examples/adyen-java-spring-online-payments/tree/main/in-person-payments-example) or [**Node.js**](https://github.com/adyen-examples/adyen-node-online-payments/tree/main/in-person-payments-example).
 
-![Demo Card Mock Terminal-API Application](public/images/demo-card-mock-terminal-api-application.gif)
+![The mock terminal: the terminal with its screen and keypad, the device panel, and the message list](public/images/mock-terminal-page.png)
+
+### The page
+One screen, laid out like the [virtual thermal printer](https://github.com/christiandt/virtual-thermal-printer), in light or dark mode as the system:
+- **The terminal**, in the middle. Its screen shows the amount of the payment waiting for a PIN, the PIN as it is entered, and then the outcome ("Approved", "Declined", "Cancelled", "Aborted") with the card.
+- **The device panel**, beside it: the terminal's state, auto-confirm, the card, and the URL to connect a POS to. It can be hidden.
+- **Messages**, on the right: every `/sync` exchange (newest first) as one line with its result, which opens to the request and response JSON. A sample request can be sent from the top. The pane can be hidden.
+
+The list comes from `GET /user-interaction/messages` (the latest 100; with `?version=<n>` an unchanged list returns only `{ version }`), and the screen from `GET /user-interaction/get-state`, which also returns the payment in progress and how the last one ended.
 
 
 ## Supported Requests/Responses
