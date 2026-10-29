@@ -11,7 +11,7 @@
  *   (CARD, default "visa").
  * - cardLast4: four digits to use instead of the card's own, or null (CARD_LAST4).
  */
-const { CARDS, DEFAULT_CARD_ID, resolveCard } = require("./cards");
+const { CARDS, DEFAULT_CARD_ID, isCardId, resolveCard } = require("./cards");
 
 const MAX_DELAY_MS = 60000;
 
@@ -29,7 +29,7 @@ class TerminalSettings {
         this.settings = {
             autoConfirm: envFlag(process.env.AUTO_CONFIRM),
             autoConfirmDelayMs: envDelay(process.env.AUTO_CONFIRM_DELAY_MS, 1000),
-            card: CARDS[process.env.CARD] ? process.env.CARD : DEFAULT_CARD_ID,
+            card: isCardId(process.env.CARD) ? process.env.CARD : DEFAULT_CARD_ID,
             cardLast4: /^\d{4}$/.test(process.env.CARD_LAST4 || "") ? process.env.CARD_LAST4 : null,
         };
     }
@@ -68,7 +68,7 @@ class TerminalSettings {
                 }
                 next.autoConfirmDelayMs = value;
             } else if (key === "card") {
-                if (!CARDS[value]) {
+                if (!isCardId(value)) {
                     return { error: `card must be one of: ${Object.keys(CARDS).join(", ")}.` };
                 }
                 next.card = value;

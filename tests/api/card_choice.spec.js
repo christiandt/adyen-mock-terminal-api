@@ -93,3 +93,12 @@ test('Cards - the menu on the page changes the card', async ({ page, request }) 
   await menu.selectOption('bankaxept');
   await expect.poll(async () => (await (await request.get('/user-interaction/settings')).json()).card).toBe('bankaxept');
 });
+
+test('Cards - only the presets are cards, not inherited object properties', () => {
+  const { isCardId, resolveCard } = require('../../src/services/cards');
+  for (const id of ['constructor', 'toString', '__proto__', 'hasOwnProperty', '', undefined, null, ['visa']]) {
+    expect(isCardId(id)).toBe(false);
+  }
+  expect(isCardId('bankaxept')).toBe(true);
+  expect(resolveCard('constructor')).toMatchObject({ brand: 'visa', bin: '411111', last4: '1111' });
+});

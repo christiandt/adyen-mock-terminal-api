@@ -36,7 +36,7 @@ test('Settings - read and changed at runtime', async ({ request }) => {
 });
 
 test('Settings - invalid values are refused and change nothing', async ({ request }) => {
-  for (const data of [{ autoConfirm: 'yes' }, { autoConfirmDelayMs: -1 }, { autoConfirmDelayMs: 60001 }, { autoConfirmDelayMs: 1.5 }, { pin: '1234' }, { card: 'diners' }, { cardLast4: '12a4' }, { cardLast4: 1234 }]) {
+  for (const data of [{ autoConfirm: 'yes' }, { autoConfirmDelayMs: -1 }, { autoConfirmDelayMs: 60001 }, { autoConfirmDelayMs: 1.5 }, { pin: '1234' }, { card: 'diners' }, { card: 'constructor' }, { card: 'toString' }, { card: ['visa'] }, { cardLast4: '12a4' }, { cardLast4: 1234 }]) {
     const response = await settings(request, data);
     expect(response.status()).toBe(400);
     expect((await response.json()).error).toBeTruthy();

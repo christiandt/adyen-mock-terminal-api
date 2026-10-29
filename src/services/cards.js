@@ -29,13 +29,22 @@ const COMMON = {
 const DEFAULT_CARD_ID = "visa";
 
 /**
+ * Whether `id` names one of the presets (not an inherited property such as "constructor").
+ * @param {*} id
+ * @returns {Boolean}
+ */
+function isCardId(id) {
+    return typeof id === "string" && Object.hasOwn(CARDS, id);
+}
+
+/**
  * The card for a preset, with its last four digits replaced if `last4` is given.
  * @param {String} id - A key of CARDS.
  * @param {String|null} [last4] - Four digits, or null for the preset's own.
  * @returns {Object}
  */
 function resolveCard(id, last4 = null) {
-    const { label, ...card } = CARDS[id] || CARDS[DEFAULT_CARD_ID];
+    const { label, ...card } = CARDS[isCardId(id) ? id : DEFAULT_CARD_ID];
     return { ...COMMON, ...card, last4: last4 || card.last4 };
 }
 
@@ -46,4 +55,4 @@ function listCards() {
     return Object.entries(CARDS).map(([id, card]) => ({ id, label: card.label }));
 }
 
-module.exports = { CARDS, DEFAULT_CARD_ID, resolveCard, listCards };
+module.exports = { CARDS, DEFAULT_CARD_ID, isCardId, resolveCard, listCards };
