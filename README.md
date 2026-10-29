@@ -53,6 +53,25 @@ With auto-confirm on, a payment is confirmed as if a PIN were entered, after a d
 - At runtime: `GET /user-interaction/settings` returns `{ "autoConfirm": false, "autoConfirmDelayMs": 1000 }`; `POST` changes any of them, e.g. `{ "autoConfirm": true, "autoConfirmDelayMs": 0 }`. An invalid value is answered `400` with an `error`.
 - On the page: the "Auto-confirm PIN" checkbox.
 
+### Card
+The card a payment is made with is a terminal setting, `card`. An approved payment carries it in `CardData` (`PaymentBrand`, `MaskedPan`) and in the `AdditionalResponse` (`paymentMethod`, `paymentMethodVariant`, `cardBin`, `cardSummary`, `fundingSource`). A refused payment shows it in `CardData` too.
+
+| `card` | `paymentMethod` | `paymentMethodVariant` | Card |
+|---|---|---|---|
+| `visa` (default) | `visa` | `visacredit` | `411111 **** 1111`, Adyen's Visa test card |
+| `visadebit` | `visa` | `visadebit` | `457173 **** 0004` |
+| `mc` | `mc` | `mc` | `555544 **** 4444` |
+| `mcdebit` | `mc` | `mcdebit` | `520082 **** 0008` |
+| `maestro` | `maestro` | `maestro` | `600007 **** 7003` |
+| `amex` | `amex` | `amex` | `370000 **** 0002` |
+| `vpay` | `vpay` | `vpay` | `482000 **** 0006` |
+| `bankaxept` | `bankaxept` | `bankaxept` | `672000 **** 0016` |
+
+The identifiers are from [Adyen's list](https://docs.adyen.com/development-resources/paymentmethodvariant), which gives BankAxept only as a variant; its `paymentMethod` is assumed to be `bankaxept` too. The card numbers are illustrative, apart from the Visa test card.
+- At start-up: `CARD` (one of the above) and `CARD_LAST4` (four digits instead of the card's own).
+- At runtime: `POST /user-interaction/settings` with `{ "card": "mc", "cardLast4": "4242" }` (`null` restores the card's own digits). `GET /user-interaction/cards` lists the cards.
+- On the page: the "Card" menu.
+
 ### Declined payments
 In general, test payments generate the result Approved. To simulate declined payments, you can change the last three digits of the `RequestedAmount` that you specify in the payment request.
 - We constructed the mock payloads using a `V400M-` terminal device.

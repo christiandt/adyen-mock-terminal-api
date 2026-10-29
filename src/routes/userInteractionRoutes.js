@@ -1,5 +1,6 @@
 const { userInteractionService, STATES } = require('../services/userInteractionService');
 const terminalSettings = require('../services/terminalSettings');
+const { listCards } = require('../services/cards');
 const paymentService = require('../services/payloads/paymentService');
 const express = require('express');
 const router = express.Router();
@@ -44,6 +45,11 @@ router.post("/settings", async (req, res) => {
         return;
     }
     res.status(200).json(settings);
+});
+
+// The cards the `card` setting can be: [{ "id": "visa", "label": "Visa (credit)" }, ...].
+router.get("/cards", async (_req, res) => {
+    res.status(200).json(listCards());
 });
 
 /* Terminal settings end */
