@@ -4,18 +4,24 @@ const path = require('path');
 const paths = require('./paths');
 const defaultRoutes = require('./routes/defaultRoutes');
 const userInteractionRoutes = require('./routes/userInteractionRoutes');
+const checkoutRoutes = require('./routes/checkoutRoutes');
 const payloadService = require('./services/payloadsService');
 const messageLog = require('./services/messageLog');
 const { userInteractionService } = require('./services/userInteractionService');
 
 /**
- * The mock terminal's Express app: the Terminal API on `/sync` and the page.
+ * The mock terminal's Express app: the Terminal API on `/sync`, referenced refunds on the
+ * Checkout API under `/checkout`, and the page.
  */
 function createApp() {
     const app = express();
     app.use(express.json());
     app.use((err, req, res, next) => {
         // Return a invalidJsonObject response when `express.json()` throws an error.
+        if (err instanceof SyntaxError && req.path.startsWith("/checkout/")) {
+            res.status(400).send({ status: 400, errorCode: "mock_invalid_json", message: "Invalid JSON", errorType: "validation" });
+            return;
+        }
         if (err instanceof SyntaxError) {
             const invalidJsonObjectResponse = payloadService.getResponseByPrefix("invalidJsonObjectNotification");
             userInteractionService.setLastResponse(invalidJsonObjectResponse);
@@ -49,6 +55,7 @@ function createApp() {
 
     app.use("/", defaultRoutes);
     app.use("/user-interaction", userInteractionRoutes);
+    app.use("/checkout", checkoutRoutes);
     return app;
 }
 

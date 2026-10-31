@@ -57,9 +57,29 @@
                 <label class="device-option device-option-indent">
                     last digits <input type="text" id="card-last4" inputmode="numeric" maxlength="4" placeholder="card's own" class="device-number">
                 </label>
+                <label class="device-option">
+                    Refunds <select id="refund-outcome" class="device-select">
+                        <option value="received">accepted</option>
+                        <option value="refused">refused (422)</option>
+                        <option value="serverError">error, not made (500)</option>
+                        <option value="lostAnswer">made, answer lost (500)</option>
+                    </select>
+                </label>
+                <label class="device-option device-option-indent">
+                    then <select id="refund-notification" class="device-select">
+                        <option value="success">REFUND success</option>
+                        <option value="failed">REFUND failed</option>
+                        <option value="refundFailed">REFUND, then REFUND_FAILED</option>
+                        <option value="none">no notification</option>
+                    </select>
+                </label>
+                <label class="device-option device-option-indent">
+                    webhook <input type="url" id="refund-webhook-url" placeholder="none" class="device-url">
+                </label>
                 <details class="connect">
                     <summary>Connect your POS: <code id="connect-url"></code></summary>
                     <p>Send Terminal API requests (<code>SaleToPOIRequest</code>) as JSON with <code>POST</code> to this URL, as you would to Adyen's <code>/sync</code> endpoint.</p>
+                    <p>For refunds to the card, use <code id="checkout-url"></code> as the Checkout API base URL. Notifications go to the webhook above, signed with the HMAC key set by <code>HMAC_KEY</code> or <code>POST /user-interaction/refund-settings</code>.</p>
                 </details>
             </div>
         </aside>

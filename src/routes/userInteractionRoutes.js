@@ -2,6 +2,7 @@ const { userInteractionService, STATES } = require('../services/userInteractionS
 const terminalSettings = require('../services/terminalSettings');
 const { listCards } = require('../services/cards');
 const messageLog = require('../services/messageLog');
+const { checkoutRefunds } = require('../services/checkoutRefunds');
 const paymentService = require('../services/payloads/paymentService');
 const express = require('express');
 const router = express.Router();
@@ -67,6 +68,34 @@ router.post("/settings", async (req, res) => {
 // The cards the `card` setting can be: [{ "id": "visa", "label": "Visa (credit)" }, ...].
 router.get("/cards", async (_req, res) => {
     res.status(200).json(listCards());
+});
+
+// How the Checkout API answers refunds and where their notifications go, e.g.
+// { "outcome": "received", "notification": "success", "webhookUrl": null, "webhookDelayMs": 1000, "hmacKeySet": false }.
+router.get("/refund-settings", async (_req, res) => {
+    res.status(200).json(checkoutRefunds.getSettings());
+});
+
+// Changes any of the refund settings (also "hmacKey", which is never read back); answers with
+// all of them, or 400 with an error.
+router.post("/refund-settings", async (req, res) => {
+    const { settings, error } = checkoutRefunds.updateSettings(req.body);
+    if (error) {
+        res.status(400).json({ error });
+        return;
+    }
+    res.status(200).json(settings);
+});
+
+// The refunds made, newest first, each with the notifications sent for it and how they were answered.
+router.get("/refunds", async (_req, res) => {
+    res.status(200).json(checkoutRefunds.list());
+});
+
+// Forgets the refunds made (and their idempotency keys), and cancels notifications not yet sent.
+router.delete("/refunds", async (_req, res) => {
+    checkoutRefunds.clear();
+    res.status(200).send({});
 });
 
 /* Terminal settings end */

@@ -85,6 +85,18 @@ function minorUnits(amount, currency) {
 }
 
 /**
+ * An amount in the currency's major units from its minor units, e.g. 66750 NOK -> 667.5,
+ * 100 ISK -> 1 (ISK has 2 decimals at Adyen), 100 JPY -> 100.
+ * @param {Number} value - Minor units.
+ * @param {String} currency - ISO 4217 code.
+ * @returns {Number}
+ */
+function fromMinorUnits(value, currency) {
+    const decimals = CURRENCY_DECIMALS[String(currency).toUpperCase()] ?? 2;
+    return Number(value) / 10 ** decimals;
+}
+
+/**
  * Copies the identifiers the terminal echoes from the request header.
  */
 function echoHeader(response, request) {
@@ -255,4 +267,4 @@ function buildResponse(template, request, { card = DEFAULT_CARD, tenderReference
     return response;
 }
 
-module.exports = { buildResponse, minorUnits, newPspReference, newTenderReference, DEFAULT_CARD };
+module.exports = { buildResponse, minorUnits, fromMinorUnits, newPspReference, newTenderReference, DEFAULT_CARD };

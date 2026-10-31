@@ -63,6 +63,46 @@ async function bindSettings() {
     panelElement("card-last4").addEventListener("change", (event) => save({ cardLast4: event.target.value.trim() || null }, event.target));
 }
 
+function showRefundSettings(settings) {
+    panelElement("refund-outcome").value = settings.outcome;
+    panelElement("refund-notification").value = settings.notification;
+    panelElement("refund-webhook-url").value = settings.webhookUrl || "";
+}
+
+// The refund settings: how the Checkout API answers a refund, and its notification. A change
+// made before the settings have loaded is saved, and not undone when they arrive.
+async function bindRefundSettings() {
+    let changed = false;
+    const save = async (changes, input) => {
+        changed = true;
+        input?.setCustomValidity("");
+        const response = await fetch("/user-interaction/refund-settings", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(changes),
+        });
+        const body = await response.json();
+        if (!response.ok && input) {
+            input.setCustomValidity(body.error || "Could not save the setting.");
+            input.reportValidity();
+        }
+        showRefundSettings(response.ok ? body : await sendGetRequest("/user-interaction/refund-settings"));
+    };
+
+    panelElement("refund-outcome").addEventListener("change", (event) => save({ outcome: event.target.value }));
+    panelElement("refund-notification").addEventListener("change", (event) => save({ notification: event.target.value }));
+    panelElement("refund-webhook-url").addEventListener("change", (event) => save({ webhookUrl: event.target.value.trim() || null }, event.target));
+
+    try {
+        const settings = await sendGetRequest("/user-interaction/refund-settings");
+        if (!changed) {
+            showRefundSettings(settings);
+        }
+    } catch (error) {
+        console.error(error);
+    }
+}
+
 // The state light and label follow the terminal (see terminal.js).
 function bindState() {
     document.addEventListener("terminal-state", (event) => {
@@ -102,6 +142,8 @@ function bindPanelToggle() {
 }
 
 panelElement("connect-url").textContent = `${location.origin}/sync`;
+panelElement("checkout-url").textContent = `${location.origin}/checkout/v71`;
 bindPanelToggle();
 bindState();
 bindSettings();
+bindRefundSettings();
