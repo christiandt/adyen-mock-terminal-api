@@ -138,3 +138,34 @@ test('Messages - only the newest exchange opens by itself; one the user opens st
   await expect(page.locator('.message', { hasText: 'open000001' })).toHaveAttribute('open', '');
   await expect(page.locator('.message', { hasText: 'open000004' })).toHaveAttribute('open', '');
 });
+
+for (const [width, height, scheme] of [[735, 680, 'dark'], [480, 760, 'light'], [1000, 700, 'dark'], [1280, 800, 'light']]) {
+  test(`Page - at ${width}x${height} (${scheme}) nothing overflows sideways and the terminal shows`, async ({ page, request }) => {
+    // An approved payment: the newest message opens by itself, with its long JSON lines.
+    await request.post('/user-interaction/clear-codeblocks-button');
+    await settings(request, { autoConfirm: true, autoConfirmDelayMs: 0 });
+    await request.post('/sync', { data: paymentRequest(667.5, `w${width}${Date.now().toString(36)}`.slice(0, 10)) });
+    await page.emulateMedia({ colorScheme: scheme });
+    await page.setViewportSize({ width, height });
+    await page.goto('/');
+    await expect(page.locator('#device-panel-body')).toBeVisible();
+    await expect(page.locator('.message[open] pre').first()).toBeVisible();
+
+    // No horizontal scrolling.
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+
+    // The terminal is drawn, at a usable size.
+    const terminal = await page.locator('.terminal').boundingBox();
+    expect(terminal).not.toBeNull();
+    expect(terminal.height).toBeGreaterThanOrEqual(240);
+    expect(terminal.width).toBeGreaterThan(100);
+
+    // Every control in the device panel stays inside it.
+    const panel = await page.locator('.device-panel').boundingBox();
+    for (const control of await page.locator('.device-panel-body select, .device-panel-body input').all()) {
+      const box = await control.boundingBox();
+      if (!box) continue;
+      expect(box.x + box.width, await control.getAttribute('id')).toBeLessThanOrEqual(panel.x + panel.width + 0.5);
+    }
+  });
+}

@@ -82,7 +82,9 @@ code {
 
 @media (max-width: 860px) {
     .app {
-        grid-template-columns: 1fr;
+        /* minmax(0, ...): an open message's long JSON lines scroll in their block instead of
+           widening the page (which pushed the terminal off screen). */
+        grid-template-columns: minmax(0, 1fr);
         grid-template-rows: minmax(0, 1fr) auto;
         height: auto;
         min-height: 100svh;
@@ -90,7 +92,7 @@ code {
     }
 
     .stage {
-        grid-template-columns: 1fr;
+        grid-template-columns: minmax(0, 1fr);
         grid-template-rows: minmax(420px, 1fr) auto;
         min-height: 100svh;
     }
@@ -122,7 +124,8 @@ code {
 }
 
 .terminal {
-    --terminal-height: min(640px, 100cqh, calc(100cqw * 16 / 9));
+    /* Never below 240px: if the area's size is not known (0), the terminal still shows. */
+    --terminal-height: max(240px, min(640px, 100cqh, calc(100cqw * 16 / 9)));
     height: var(--terminal-height);
     aspect-ratio: 9 / 16;
     display: flex;
@@ -533,6 +536,8 @@ code {
 
 .device-panel-body {
     display: grid;
+    /* One column as wide as the panel: a long menu option shrinks its control, not widens the panel. */
+    grid-template-columns: minmax(0, 1fr);
     gap: 8px;
 }
 
@@ -560,6 +565,7 @@ code {
     display: flex;
     align-items: center;
     gap: 6px;
+    min-width: 0;
     cursor: pointer;
 }
 
@@ -580,6 +586,7 @@ code {
 .device-url {
     flex: 1;
     min-width: 0;
+    width: 0;
 }
 
 .connect {
