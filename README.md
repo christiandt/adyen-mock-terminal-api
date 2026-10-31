@@ -105,10 +105,11 @@ As at [Adyen](https://docs.adyen.com/api-explorer/Checkout/71/post/payments/(pay
 |---|---|---|
 | `outcome` | `received` (default): `201`; `refused`: `422`, nothing refunded; `serverError`: `500`, nothing refunded; `lostAnswer`: refunded and notified, but answered `500`, as when the answer is lost (a retry with the same `Idempotency-Key` gets the `201`) | `REFUND_OUTCOME` |
 | `notification` | `success` (default); `failed`: `REFUND` with `success: "false"`; `refundFailed`: `REFUND`, then `REFUND_FAILED`, as when the card scheme rejects it later; `none` | `REFUND_NOTIFICATION` |
-| `webhookUrl` | where notifications go, e.g. `http://localhost:8000/api/v1/webhooks/adyen`; none by default | `WEBHOOK_URL` |
+| `webhookUrl` | where notifications go, e.g. `http://localhost:8000/api/v1/webhooks/adyen`, without credentials in it; none by default | `WEBHOOK_URL` |
 | `hmacKey` | the hex HMAC key; never read back (`hmacKeySet` says whether one is set) | `HMAC_KEY` |
 | `webhookDelayMs` | how long after the refund the notification is sent, 0–60000 (default `1000`) | `WEBHOOK_DELAY_MS` |
 
+- A refund's notifications go to the webhook URL, signed with the key, set when the refund was made; a later change applies to later refunds.
 - At runtime: `GET`/`POST /user-interaction/refund-settings`; an invalid value is answered `400` with an `error`. `GET /user-interaction/refunds` lists the refunds made with the notifications sent and how the webhook answered them; `DELETE` forgets them.
 - On the page: "Refunds", "then" and "webhook" in the device panel. Refunds and notifications are in the message list.
 

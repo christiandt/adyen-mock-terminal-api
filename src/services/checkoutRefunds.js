@@ -19,19 +19,22 @@
  * - notification: what the REFUND notification says (REFUND_NOTIFICATION, default "success"):
  *   "success", "failed" (success "false"), "refundFailed" (REFUND, then REFUND_FAILED, as when
  *   the card scheme rejects it later) or "none".
- * - webhookUrl: where notifications are posted, or null for none (WEBHOOK_URL).
+ * - webhookUrl: where notifications are posted, without credentials in it, or null for none
+ *   (WEBHOOK_URL).
  * - hmacKey: the hex HMAC key notifications are signed with, or null (HMAC_KEY). Never read back.
+ *   A refund's notifications use the webhookUrl and hmacKey set when the refund was made.
  * - webhookDelayMs: how long after the refund the notification is sent, 0-60000 ms
  *   (WEBHOOK_DELAY_MS, default 1000).
  */
 const crypto = require("crypto");
 const messageLog = require("./messageLog");
-const { newPspReference } = require("./responseBuilder");
+const { newPspReference, fromMinorUnits } = require("./responseBuilder");
 
 const OUTCOMES = ["received", "refused", "serverError", "lostAnswer"];
 const NOTIFICATIONS = ["success", "failed", "refundFailed", "none"];
 const MAX_DELAY_MS = 60000;
 const MAX_REFUNDS = 1000;
+const MAX_IDEMPOTENCY_KEYS = 100000;
 
 function envChoice(value, choices, fallback) {
     return choices.includes(value) ? value : fallback;
@@ -48,7 +51,9 @@ function isHmacKey(value) {
 
 function isWebhookUrl(value) {
     try {
-        return ["http:", "https:"].includes(new URL(value).protocol);
+        const url = new URL(value);
+        // fetch refuses a URL with credentials in it, so such a webhook could never be reached.
+        return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password;
     } catch (error) {
         return false;
     }
@@ -83,11 +88,14 @@ class CheckoutRefunds {
             webhookDelayMs: envDelay(process.env.WEBHOOK_DELAY_MS, 1000),
         };
         this.hmacKey = isHmacKey(process.env.HMAC_KEY) ? process.env.HMAC_KEY : null;
-        // Idempotency-Key -> { status, body } of the refund it made.
+        // Idempotency-Key -> { status, body } of the refund it made. Kept apart from the history
+        // below, and far longer, so a late retry never refunds again.
         this.byIdempotencyKey = new Map();
         // The refunds made, oldest first, each with the notifications sent for it.
         this.refunds = [];
         this.timers = new Set();
+        // Bumped by clear(): a notification sequence still running stops before its next event.
+        this.generation = 0;
     }
 
     /**
@@ -121,7 +129,7 @@ class CheckoutRefunds {
                 next.notification = value;
             } else if (key === "webhookUrl") {
                 if (value !== null && !isWebhookUrl(value)) {
-                    return { error: "webhookUrl must be an http(s) URL, or null." };
+                    return { error: "webhookUrl must be an http(s) URL without credentials, or null." };
                 }
                 next.webhookUrl = value;
             } else if (key === "hmacKey") {
@@ -150,7 +158,9 @@ class CheckoutRefunds {
      * @returns {{status: Number, body: Object}}
      */
     refund({ paymentPspReference, apiKey, idempotencyKey, body }) {
-        const entry = messageLog.add({ refund: { paymentPspReference, idempotencyKey: idempotencyKey || null, body } }, "refund");
+        const entry = messageLog.add({ refund: { paymentPspReference, idempotencyKey: idempotencyKey || null, body } }, "refund", {
+            amount: validate(body) ? null : majorAmount(body.amount),
+        });
         const answer = this.answer({ paymentPspReference, apiKey, idempotencyKey, body });
         messageLog.complete(entry, { status: answer.status, body: answer.body });
         return answer;
@@ -188,6 +198,9 @@ class CheckoutRefunds {
         const made = { status: 201, body: refund };
         if (idempotencyKey) {
             this.byIdempotencyKey.set(idempotencyKey, made);
+            if (this.byIdempotencyKey.size > MAX_IDEMPOTENCY_KEYS) {
+                this.byIdempotencyKey.delete(this.byIdempotencyKey.keys().next().value);
+            }
         }
         this.record(refund);
 
@@ -204,25 +217,27 @@ class CheckoutRefunds {
         const record = { time: new Date().toISOString(), refund, notifications: [] };
         this.refunds.push(record);
         if (this.refunds.length > MAX_REFUNDS) {
-            const forgotten = this.refunds.shift();
-            for (const [key, made] of this.byIdempotencyKey) {
-                if (made.body === forgotten.refund) {
-                    this.byIdempotencyKey.delete(key);
-                }
-            }
+            this.refunds.shift();
         }
 
+        // The destination and key as they are now: a later change does not reach this refund's
+        // notifications, so they all go where they were meant to, signed for that receiver.
         const { notification, webhookUrl, webhookDelayMs } = this.settings;
+        const hmacKey = this.hmacKey;
         if (notification === "none" || !webhookUrl) {
             return;
         }
         const events = notification === "refundFailed"
             ? [["REFUND", "true", ""], ["REFUND_FAILED", "true", "Refund rejected by the card scheme (mock)"]]
             : [["REFUND", notification === "success" ? "true" : "false", notification === "success" ? "" : "Refund failed (mock)"]];
+        const generation = this.generation;
         const timer = setTimeout(async () => {
             this.timers.delete(timer);
             for (const [eventCode, success, reason] of events) {
-                await this.notify(record, webhookUrl, { eventCode, success, reason });
+                if (generation !== this.generation) {
+                    return;
+                }
+                await this.notify(record, { webhookUrl, hmacKey }, { eventCode, success, reason });
             }
         }, webhookDelayMs);
         this.timers.add(timer);
@@ -231,7 +246,7 @@ class CheckoutRefunds {
     /**
      * Posts one notification about a refund and records how the webhook answered.
      */
-    async notify(record, webhookUrl, { eventCode, success, reason }) {
+    async notify(record, { webhookUrl, hmacKey }, { eventCode, success, reason }) {
         const { refund } = record;
         const item = {
             additionalData: {},
@@ -246,13 +261,15 @@ class CheckoutRefunds {
             reason,
             success,
         };
-        if (this.hmacKey) {
-            item.additionalData.hmacSignature = hmacSignature(item, this.hmacKey);
+        if (hmacKey) {
+            item.additionalData.hmacSignature = hmacSignature(item, hmacKey);
         }
         const payload = { live: "false", notificationItems: [{ NotificationRequestItem: item }] };
         const sent = { eventCode, success, webhookUrl, status: null, body: null, error: null };
         record.notifications.push(sent);
-        const entry = messageLog.add({ notification: payload, webhookUrl }, "notification");
+        const entry = messageLog.add({ notification: payload, webhookUrl }, "notification", {
+            amount: majorAmount(refund.amount),
+        });
         try {
             const response = await fetch(webhookUrl, {
                 method: "POST",
@@ -277,6 +294,7 @@ class CheckoutRefunds {
     }
 
     clear() {
+        this.generation++;
         for (const timer of this.timers) {
             clearTimeout(timer);
         }
@@ -284,6 +302,14 @@ class CheckoutRefunds {
         this.refunds = [];
         this.byIdempotencyKey.clear();
     }
+}
+
+/**
+ * An amount in minor units as { value, currency } in major units, by Adyen's currency table,
+ * for the page to show (e.g. 100 ISK minor units -> 1 ISK).
+ */
+function majorAmount(amount) {
+    return { value: fromMinorUnits(amount.value, amount.currency), currency: amount.currency };
 }
 
 function error(status, errorCode, message, errorType) {

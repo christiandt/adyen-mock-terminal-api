@@ -67,17 +67,12 @@ function summarize(entry) {
     return { category, detail, result, tone: outcome.Result === "Success" ? "approved" : "declined" };
 }
 
-function formatMinorAmount(amount) {
-    if (!amount || !Number.isInteger(amount.value)) {
+// A refund's amount, already in major units by Adyen's currency table (the server's summary).
+function formatSummaryAmount(amount) {
+    if (!amount || typeof amount.value !== "number") {
         return "";
     }
-    try {
-        const format = new Intl.NumberFormat(undefined, { style: "currency", currency: amount.currency });
-        const decimals = format.resolvedOptions().maximumFractionDigits;
-        return format.format(amount.value / 10 ** decimals);
-    } catch (error) {
-        return `${amount.value} ${amount.currency} (minor units)`;
-    }
+    return formatMessageAmount({ RequestedAmount: amount.value, Currency: amount.currency });
 }
 
 /**
@@ -85,7 +80,7 @@ function formatMinorAmount(amount) {
  */
 function summarizeRefund(entry) {
     const refund = entry.request?.refund || {};
-    const detail = `${formatMinorAmount(refund.body?.amount)} of ${refund.paymentPspReference || "?"}`.trim();
+    const detail = `${formatSummaryAmount(entry.summary?.amount)} of ${refund.paymentPspReference || "?"}`.trim();
     if (!entry.done) {
         return { category: "Refund", detail, result: "Waiting…", tone: "busy" };
     }

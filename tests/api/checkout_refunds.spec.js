@@ -31,15 +31,17 @@ function expectedSignature(item, key) {
 }
 
 /** A webhook receiver: collects the notifications posted to it and answers them as `answer` says. */
-async function webhook(answer = { status: 200, body: '[accepted]' }) {
+async function webhook(answer = { status: 200, body: '[accepted]' }, holdMs = 0) {
   const received = [];
   const server = http.createServer((req, res) => {
     let body = '';
     req.on('data', (chunk) => { body += chunk; });
     req.on('end', () => {
       received.push(JSON.parse(body));
-      res.writeHead(answer.status, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ notificationResponse: answer.body }));
+      setTimeout(() => {
+        res.writeHead(answer.status, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ notificationResponse: answer.body }));
+      }, holdMs);
     });
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -70,7 +72,7 @@ test('Refund settings - read, changed, and the HMAC key never read back', async 
 });
 
 test('Refund settings - invalid values are refused and change nothing', async ({ request }) => {
-  for (const data of [{ outcome: 'maybe' }, { notification: 'later' }, { webhookUrl: 'ftp://x' }, { webhookUrl: 'not a url' }, { hmacKey: 'xyz' }, { hmacKey: 'abc' }, { webhookDelayMs: -1 }, { webhookDelayMs: 60001 }, { pin: '1234' }]) {
+  for (const data of [{ outcome: 'maybe' }, { notification: 'later' }, { webhookUrl: 'ftp://x' }, { webhookUrl: 'not a url' }, { webhookUrl: 'http://user:secret@localhost:8000/hook' }, { webhookUrl: 'http://user@localhost:8000/hook' }, { hmacKey: 'xyz' }, { hmacKey: 'abc' }, { webhookDelayMs: -1 }, { webhookDelayMs: 60001 }, { pin: '1234' }]) {
     const response = await refundSettings(request, data);
     expect(response.status()).toBe(400);
     expect((await response.json()).error).toBeTruthy();
@@ -229,6 +231,53 @@ test('Notification - unsigned without an HMAC key; a webhook that fails is recor
   }
 });
 
+test('Refund - a retry after more than 1000 later refunds still refunds nothing more', async ({ request }) => {
+  const key = unique('early');
+  const first = await (await refund(request, { key })).json();
+  for (let i = 0; i < 1001; i++) {
+    expect((await refund(request)).status()).toBe(201);
+  }
+  const retry = await refund(request, { key });
+  expect(retry.status()).toBe(201);
+  expect((await retry.json()).pspReference).toBe(first.pspReference);
+  // The history keeps the latest 1000; the retry added none.
+  const refunds = await (await request.get('/user-interaction/refunds')).json();
+  expect(refunds).toHaveLength(1000);
+  expect(refunds.some((r) => r.refund.reference === key)).toBe(false);
+});
+
+test('Notification - clearing the refunds stops a REFUND_FAILED still to come', async ({ request }) => {
+  // The webhook holds its answer to the REFUND, so the clear lands between the two events.
+  const hook = await webhook(undefined, 600);
+  try {
+    await refundSettings(request, { webhookUrl: hook.url, webhookDelayMs: 0, notification: 'refundFailed' });
+    await refund(request);
+    await expect.poll(() => hook.received.length).toBe(1);
+    await request.delete('/user-interaction/refunds');
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    expect(hook.items().map((item) => item.eventCode)).toEqual(['REFUND']);
+  } finally {
+    await hook.close();
+  }
+});
+
+test('Notification - goes where it was meant to, signed with the key set when the refund was made', async ({ request }) => {
+  const first = await webhook();
+  const second = await webhook();
+  const otherKey = 'AA'.repeat(32);
+  try {
+    await refundSettings(request, { webhookUrl: first.url, webhookDelayMs: 500, hmacKey: HMAC_KEY });
+    await refund(request);
+    await refundSettings(request, { webhookUrl: second.url, hmacKey: otherKey });
+    await expect.poll(() => first.received.length).toBe(1);
+    expect(first.items()[0].additionalData.hmacSignature).toBe(expectedSignature(first.items()[0], HMAC_KEY));
+    expect(second.received).toEqual([]);
+  } finally {
+    await first.close();
+    await second.close();
+  }
+});
+
 test('Messages - a refund and its notification are in the message list', async ({ request }) => {
   const hook = await webhook();
   try {
@@ -260,6 +309,11 @@ test('Page - the device panel changes the refund settings and lists a refund', a
     await refundSettings(request, { outcome: 'received', notification: 'none' });
     await refund(request, { psp: 'CWBC43ZX2VTFWR82' });
     await expect(page.locator('.message', { hasText: 'Refund' }).first()).toContainText('201 · received');
+
+    // Amounts by Adyen's currency table: 100 minor units of ISK (2 decimals at Adyen) are ISK 1.
+    await refund(request, { psp: 'ISKPAYMENT000001', data: { merchantAccount: 'FloristITECOM', amount: { currency: 'ISK', value: 100 } } });
+    const isk = page.locator('.message', { hasText: 'ISKPAYMENT000001' }).first();
+    await expect(isk.locator('.message-detail')).toHaveText(/^(ISK\s?1|1\s?ISK) of ISKPAYMENT000001$/);
   } finally {
     await hook.close();
   }
