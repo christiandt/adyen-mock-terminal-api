@@ -31,6 +31,12 @@ function formatMessageAmount(amounts) {
  * The one-line summary of an exchange: { category, detail, result, tone }.
  */
 function summarize(entry) {
+    if (entry.kind === "refund") {
+        return summarizeRefund(entry);
+    }
+    if (entry.kind === "notification") {
+        return summarizeNotification(entry);
+    }
     const request = entry.request?.SaleToPOIRequest;
     if (!request) {
         return { category: "Invalid JSON", detail: "", result: "Event", tone: "declined" };
@@ -59,6 +65,52 @@ function summarize(entry) {
     }
     const result = outcome.Result === "Success" ? "Success" : `${outcome.Result} · ${outcome.ErrorCondition || ""}`.trim();
     return { category, detail, result, tone: outcome.Result === "Success" ? "approved" : "declined" };
+}
+
+function formatMinorAmount(amount) {
+    if (!amount || !Number.isInteger(amount.value)) {
+        return "";
+    }
+    try {
+        const format = new Intl.NumberFormat(undefined, { style: "currency", currency: amount.currency });
+        const decimals = format.resolvedOptions().maximumFractionDigits;
+        return format.format(amount.value / 10 ** decimals);
+    } catch (error) {
+        return `${amount.value} ${amount.currency} (minor units)`;
+    }
+}
+
+/**
+ * A Checkout API refund: its amount and the payment it refunds, and how it was answered.
+ */
+function summarizeRefund(entry) {
+    const refund = entry.request?.refund || {};
+    const detail = `${formatMinorAmount(refund.body?.amount)} of ${refund.paymentPspReference || "?"}`.trim();
+    if (!entry.done) {
+        return { category: "Refund", detail, result: "Waiting…", tone: "busy" };
+    }
+    const { status, body } = entry.response || {};
+    if (status === 201) {
+        return { category: "Refund", detail, result: `${status} · ${body?.status}`, tone: "approved" };
+    }
+    return { category: "Refund", detail, result: `${status} · ${body?.errorType || "error"}`, tone: "declined" };
+}
+
+/**
+ * A webhook notification the mock sent: its event, and how the webhook answered.
+ */
+function summarizeNotification(entry) {
+    const item = entry.request?.notification?.notificationItems?.[0]?.NotificationRequestItem || {};
+    const detail = `${item.success === "true" ? "success" : "failure"} · ${item.pspReference || ""}`.trim();
+    const category = item.eventCode || "Notification";
+    if (!entry.done) {
+        return { category, detail, result: "Sending…", tone: "busy" };
+    }
+    const { status, error } = entry.response || {};
+    if (error || status === null) {
+        return { category, detail, result: `Not delivered`, tone: "declined" };
+    }
+    return { category, detail, result: `Webhook ${status}`, tone: status >= 200 && status < 300 ? "approved" : "declined" };
 }
 
 function jsonBlock(title, value) {

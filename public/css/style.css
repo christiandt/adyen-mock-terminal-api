@@ -316,7 +316,8 @@ code {
 
 .request-dropdown,
 .device-select,
-.device-number {
+.device-number,
+.device-url {
     padding: 5px 8px;
     border: 1px solid var(--border);
     border-radius: 6px;
@@ -575,7 +576,8 @@ code {
     opacity: 0.5;
 }
 
-.device-select {
+.device-select,
+.device-url {
     flex: 1;
     min-width: 0;
 }

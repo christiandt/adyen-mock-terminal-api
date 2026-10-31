@@ -96,6 +96,24 @@ The identifiers are from [Adyen's list](https://docs.adyen.com/development-resou
 - At runtime: `POST /user-interaction/settings` with `{ "card": "mc", "cardLast4": "4242" }` (`null` restores the card's own digits). `GET /user-interaction/cards` lists the cards.
 - On the page: the "Card" menu.
 
+### Refunds to the card (Checkout API)
+A POS can refund a terminal payment to its card without the card, as a [referenced refund](https://docs.adyen.com/unified-commerce/referenced-refunds) on the Checkout API: `POST /payments/{paymentPspReference}/refunds`. The mock answers it under `/checkout/v<n>`, so point the POS's Checkout API base URL (normally `https://checkout-test.adyen.com/v71`) at `http://localhost:3000/checkout/v71`.
+
+As at [Adyen](https://docs.adyen.com/api-explorer/Checkout/71/post/payments/(paymentPspReference)/refunds), the request is only accepted: `201` with the refund's own `pspReference`, the `paymentPspReference`, `reference`, `amount` and `status: "received"`. Whether the money reached the card comes in a [`REFUND` webhook notification](https://docs.adyen.com/online-payments/refund/#refund-webhook), which the mock posts to the webhook URL, with `originalReference` the payment's PSP reference and `merchantReference` the refund's `reference`, signed with the HMAC key as Adyen [signs notifications](https://docs.adyen.com/development-resources/webhooks/verify-hmac-signatures/) (`additionalData.hmacSignature`). Without a key it is sent unsigned. The same `Idempotency-Key` gets the answer of the refund it made, and refunds nothing more.
+
+| Setting | Values | Environment |
+|---|---|---|
+| `outcome` | `received` (default): `201`; `refused`: `422`, nothing refunded; `serverError`: `500`, nothing refunded; `lostAnswer`: refunded and notified, but answered `500`, as when the answer is lost (a retry with the same `Idempotency-Key` gets the `201`) | `REFUND_OUTCOME` |
+| `notification` | `success` (default); `failed`: `REFUND` with `success: "false"`; `refundFailed`: `REFUND`, then `REFUND_FAILED`, as when the card scheme rejects it later; `none` | `REFUND_NOTIFICATION` |
+| `webhookUrl` | where notifications go, e.g. `http://localhost:8000/api/v1/webhooks/adyen`; none by default | `WEBHOOK_URL` |
+| `hmacKey` | the hex HMAC key; never read back (`hmacKeySet` says whether one is set) | `HMAC_KEY` |
+| `webhookDelayMs` | how long after the refund the notification is sent, 0–60000 (default `1000`) | `WEBHOOK_DELAY_MS` |
+
+- At runtime: `GET`/`POST /user-interaction/refund-settings`; an invalid value is answered `400` with an `error`. `GET /user-interaction/refunds` lists the refunds made with the notifications sent and how the webhook answered them; `DELETE` forgets them.
+- On the page: "Refunds", "then" and "webhook" in the device panel. Refunds and notifications are in the message list.
+
+Not Adyen's: no `X-API-Key` is `401`, but any key is accepted; the `errorCode` of a refusal (`mock_…`) is the mock's own; any `paymentPspReference` is refunded, not only payments the terminal made, and for any amount.
+
 ### Declined payments
 In general, test payments generate the result Approved. To simulate declined payments, you can change the last three digits of the `RequestedAmount` that you specify in the payment request.
 - We constructed the mock payloads using a `V400M-` terminal device.
